@@ -20,7 +20,7 @@ import numpy as np
 # "datasets", "data_created" and "spice" exist
 # ================================================ 
 rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
-# rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
+rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
 
 
 
@@ -64,7 +64,7 @@ for filename in os.listdir(datasetDir):
 if create_LP:
     mask_description = {
         'explanation': "Mask array is of same size as LP_data, with each index corresponding to a data point. The mask value contains info on data quality, with high values being better quality.",
-        '1': "TM satuaration (either high or low).",
+        '1': "TM saturation (either high or low).",
         '2': "Interference with RIME instrument.",
         '3': "Lunar wake data, will overwrite '1'.",
         '4': "High quality data, this does not contain any contaminations."
@@ -88,6 +88,7 @@ if create_LP:
 
 
         # Removes the data from when instrument was in density mode
+        # Only applicable for 2024-01-26
         # ================================================
         if True:         
             #Seq. 14: in *T101713 @:            7.59538487e17 < t < 7.5953931e17 
@@ -122,28 +123,21 @@ if create_LP:
        
 
 
-        # Removes config. change noise from data
+        # Removes config. start noise from certain data files
         # ================================================
         if True:
-            removal_width = 32 # Number of samples to remove
-            new_config_delay = 1e8 # [ns]  new_config_delay at which a new config. is assumed to have been made
-
-            noise_mask = np.zeros(len(Epoch_LP))
-            # Mask the next samples when dt is above new_config_delay, for which a new config. has been made
-            delta_t = Epoch_LP[1:] - Epoch_LP[:-1]
-            i = 0
-            for dt in delta_t:
-                if dt > new_config_delay:
-                    noise_mask[i:i+removal_width] = 1
-                i +=1
-
-            if filename == "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240126T090524_V03" or filename == "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240823T035821_V01.cdf":
-                noise_mask[0:removal_width-1] = 1
-                 
-
-            Epoch_LP = Epoch_LP[noise_mask == 0]
-            LP_data = LP_data[:,noise_mask == 0]
-            Mask = Mask[:,noise_mask == 0]
+            list_of_start_files = [
+                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240126T090524_V03",
+                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240820T180737_V01.cdf",
+                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240823T035821_V01.cdf",
+                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240126T090524_V03.cdf"
+            ]
+            for filename_2 in list_of_start_files:    
+                if filename == filename_2:
+                    removal_width = 32 # Number of samples to remove
+                    Epoch_LP = Epoch_LP[removal_width-1:]
+                    LP_data = LP_data[:,removal_width-1:]
+                    Mask = Mask[:,removal_width-1:]
 
 
     
@@ -165,7 +159,8 @@ if create_LP:
 
 
 
-        # Add Lunar wake data to mask
+        # Add Lunar wake data to mask 
+        # Only applicable on 2024-08-19
         # ================================================
         if True: 
             # This file contains lunar wake data
@@ -200,6 +195,29 @@ if create_LP:
         file_i +=1
         #           End of loop over LP files
         # ================================================
+
+
+    
+
+    # Removes config. change noise from all data
+    # ================================================
+    if True:
+        removal_width = 32 # Number of samples to remove
+        new_config_delay = 1e8 # [ns]  new_config_delay at which a new config. is assumed to have been made
+
+        noise_mask = np.zeros(len(Epoch_LP_All))
+        # Mask the next samples when dt is above new_config_delay, for which a new config. has been made
+        delta_t = Epoch_LP_All[1:] - Epoch_LP_All[:-1]
+
+        i = 0
+        for dt in delta_t:
+            if dt > new_config_delay:
+                noise_mask[i:i+removal_width] = 1
+            i +=1
+
+        Epoch_LP_All = Epoch_LP_All[noise_mask == 0]
+        LP_data_All = LP_data_All[:,noise_mask == 0]
+        Mask_All = Mask_All[:,noise_mask == 0]
 
 
     #           Save the data in a .npz file

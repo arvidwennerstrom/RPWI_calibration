@@ -1,4 +1,4 @@
-# HK-plotting script
+# RPWI Electric field data
 # By: Arvid Wennerström"
 
 
@@ -15,10 +15,13 @@ from math import ceil
 #               Classes & Functions 
 # ================================================
 class Plot_options:
-    def __init__(self,unit = 'TM',saturation_filter = True,align_Efield = True):
+    def __init__(self,style='-',unit = 'U',probe_differentials = False,potential_at_probes = False,Efield = False,Efield_xyz = False):
+        self.style = style
         self.unit = unit
-        self.saturation_filter = saturation_filter
-        self.align_Efield = align_Efield
+        self.probe_differentials = probe_differentials
+        self.potential_at_probes = potential_at_probes
+        self.Efield = Efield
+        self.Efield_xyz = Efield_xyz
         
 
 def tt2000_to_readable(tt2000,precision = 9):
@@ -69,8 +72,8 @@ def dynamic_time_formatter(x, pos):
 # "datasets", "data_created" and "spice" exist
 # ================================================ 
 rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
-# rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
-date = '240823'
+rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
+date = '240820'
 
 
 #           Choose settings for plot
@@ -78,12 +81,20 @@ date = '240823'
 plot_matplotlib = True 
 plot_plotly = False
 
-# unit: 'TM', 'U' (voltage), 'EF' (Electric field)
-# saturation filte: True/False
-# Align E-field: True/False
-plot_options = Plot_options('TM',False,False)
+# Plot style:                   '-' (lines) or 'o' (dots)
+# Unit:                         'TM'/'V' (voltage)
+# Probe differentials (TM or V):     True/False
+# SC potential at each probe:   True/False
+# Electric field:               True/False
+# SC axes aligned E-field:      True/False
+plot_options = Plot_options('-','V',False,False,True,True)
 
-mask_threshold = 3
+
+# 1: TM saturation (either high or low).
+# 2: Interference with RIME instrument.
+# 3: Lunar wake data, will overwrite '1'.
+# 4: High quality data, this does not contain any contaminations.
+mask_limit = 4
 
 
 
@@ -91,8 +102,12 @@ mask_threshold = 3
 # ================================================
 loaded_LP = np.load(rootDir + "/data_created/LP-SID1_" + date + ".npz")
 Epoch = loaded_LP["Epoch"]
-LP_data = loaded_LP["LP_data"]
+LP_diffs_TM = loaded_LP["LP_data"]
 Mask = loaded_LP["Mask"]
+
+# NOTE: LP_data is now always converted to voltage from TM, so unit selection 
+# above does nothing. This might be desirable to change in the future.
+LP_diffs = calibration_coefficients*LP_diffs_TM
 
 
 
@@ -106,110 +121,270 @@ spice.furnsh(ls_spice_kernels)
 
 
 
-#     Transform E-field to SC x-,y- and z-axes
+# Get SC potential at each probe, by adding differentials.
+# Use this to approximate DC offset coefficients and get
+# calibrated potentials.
 # ================================================
-if plot_options.align_Efield:
-    # M is transformation matrix in: U = M*E, where U is voltage and E is electric field
-    
+LP_potentials = np.zeros(LP_diffs.shape)
+LP_potentials[3] = LP_diffs[3]
+LP_potentials[2] = LP_potentials[3] + LP_diffs[2]
+LP_potentials[1] = LP_potentials[2] + LP_diffs[1]
+LP_potentials[0] = LP_potentials[1] + LP_diffs[0]
+
+# ================================================
+# NOTE: Simple way of doing it, but is problematic when LP[3]/LP[n] --> inf.
+k1 = np.mean(LP_potentials[3]/LP_potentials[0])
+k2 = np.mean(LP_potentials[3]/LP_potentials[1])
+k3 = np.mean(LP_potentials[3]/LP_potentials[2])
+
+
+# NOTE: Alternative way, this removes outliers from LP[3]/LP[n] --> inf,
+# by filtering by standard deviation
+if False:
+    from scipy import stats
+    std_dev_limit = 1
+
+    k1_all = LP_potentials[3]/LP_potentials[0]
+    k2_all = LP_potentials[3]/LP_potentials[1]
+    k3_all = LP_potentials[3]/LP_potentials[2]
+
+    z_score1 = np.abs(stats.zscore(k1_all))
+    z_score2 = np.abs(stats.zscore(k2_all))
+    z_score3 = np.abs(stats.zscore(k3_all))
+
+    k1 = np.mean(k1_all[z_score1 < std_dev_limit])
+    k2 = np.mean(k2_all[z_score2 < std_dev_limit])
+    k3 = np.mean(k3_all[z_score3 < std_dev_limit])
+# ================================================
+
+
+LP_potentials_calibr = np.zeros(LP_potentials.shape)
+LP_potentials_calibr[3] = LP_potentials[3]
+LP_potentials_calibr[2] = k3*LP_potentials[2]
+LP_potentials_calibr[1] = k2*LP_potentials[1]
+LP_potentials_calibr[0] = k1*LP_potentials[0]
+
+
+
+# Calculate new differentials using calibrated potentials
+# ================================================
+LP_diffs_calibr = np.zeros(LP_potentials_calibr.shape)
+LP_diffs_calibr[3] = LP_potentials_calibr[3]
+LP_diffs_calibr[2] = LP_potentials_calibr[2] - LP_potentials_calibr[3]
+LP_diffs_calibr[1] = LP_potentials_calibr[1] - LP_potentials_calibr[2]
+LP_diffs_calibr[0] = LP_potentials_calibr[0] - LP_potentials_calibr[1]
+
+
+
+# Get E-field between probes
+# ================================================
+if plot_options.Efield: 
+    # 1e3's are used to give EF in mV/m, rather than V/m
+
     # NOTE: This is for mode 0
+    EF_in_LPs = np.zeros((3,len(Epoch)))
+    EF_in_LPs[0] = 1e3*LP_diffs[0]/np.linalg.norm(rpwi_data.LP12_distance)
+    EF_in_LPs[1] = 1e3*LP_diffs[1]/np.linalg.norm(rpwi_data.LP23_distance)
+    EF_in_LPs[2] = 1e3*LP_diffs[2]/np.linalg.norm(rpwi_data.LP34_distance)
+    
+    EF_in_LPs_calibr = np.zeros((3,len(Epoch)))
+    EF_in_LPs_calibr[0] = 1e3*LP_diffs_calibr[0]/np.linalg.norm(rpwi_data.LP12_distance)
+    EF_in_LPs_calibr[1] = 1e3*LP_diffs_calibr[1]/np.linalg.norm(rpwi_data.LP23_distance)
+    EF_in_LPs_calibr[2] = 1e3*LP_diffs_calibr[2]/np.linalg.norm(rpwi_data.LP34_distance)
+
+
+
+# Calculate E-field in SC x-,y- and z-axes
+# ================================================
+if plot_options.Efield_xyz:
+
+    # M is transformation matrix in: U = M*E, where U is voltage and E is electric field
     M = [rpwi_data.LP12_distance,
          rpwi_data.LP23_distance,
          rpwi_data.LP34_distance]
     M_inv = np.linalg.inv(M)
+    EF_in_xyz = 1e3*np.matmul(M_inv,LP_diffs[:3])
+    EF_in_xyz_calibr = 1e3*np.matmul(M_inv,LP_diffs_calibr[:3])
 
-    E_field = np.matmul(M_inv,LP_data[:3])
 
 
-#          Scale and update y-axis values
+
+#               Plot (using matplotlib)
 # ================================================
-if plot_options.unit == 'U' or plot_options.unit == 'EF':
-    LP_data = calibration_coefficients*LP_data
-    ylabel_diff = ['V', 'V']
-    if plot_options.unit == 'EF':
-        LP_data[0] = 1e3*LP_data[0]/np.linalg.norm(rpwi_data.LP12_distance)
-        LP_data[1] = 1e3*LP_data[1]/np.linalg.norm(rpwi_data.LP23_distance)
-        LP_data[2] = 1e3*LP_data[2]/np.linalg.norm(rpwi_data.LP34_distance)
-        ylabel = ['mV/m', 'V']
-else:
-    ylabel = ['TM', 'TM']
-
-
 if plot_matplotlib:
-    #               Plot (using matplotlib)
-    # ================================================
     import matplotlib.pyplot as plt
     from matplotlib.ticker import FuncFormatter
     
-    # Divide the data into chunks, by number of data points in "limit"
-    limit = 5e6
+    
+    # Divide the data into chunks, by number of data points in "limit".
+    # Then plot a new figure for each chunk.
+    # ================================================================
+    limit = 4e8
     number_of_data_chunks = ceil(len(Epoch)/limit)
     chunk_size = round(len(Epoch)/number_of_data_chunks)
 
 
-
-
-    #           Repeat for each chunk
-    # ================================================
-    for chunk_i in range(2):
-        # Decide which data indecies shall be plotted in figure
+    for chunk_i in range(1):
+        # Decide and get data that belongs to this chunk.
+        # ================================================
         lower_i = int(chunk_size*chunk_i)
         upper_i = int(chunk_size*(chunk_i+1)-1)
+                
+        Epoch_chunk = Epoch[lower_i:upper_i]
+        LP_diffs_chunk = LP_diffs[:,lower_i:upper_i]
+        Mask_chunk = Mask[:,lower_i:upper_i]
+        
+        
+        
+        # General plot setup
+        # ================================================
+        window_title = '20' + date[0:2] + '-' + date[2:4] + '-' + date[4:6] + ' Chunk ' + str(chunk_i+1)
+        linewidth = 0.3
+        xlabel = "Timestamp (UTC)"
+
+
+        # Plot SC potential at each probe
+        # ================================================
+        if plot_options.potential_at_probes:
+            SC_potentials_chunk = LP_potentials[:,lower_i:upper_i]
+            LP_potentials_calibr_chunk = LP_potentials_calibr[:,lower_i:upper_i]
+
+            legends = [
+                ['P01 (P12+P23+P34+P04)', 'P02 (P23+P34+P04)', 'P03 (P34+P04)', 'P04'],
+                ['k1*U1', 'k2*U2', "k3*U3", 'U4']
+                ]
+            
+            titles = [
+                'SC potential at each probe',
+                'Calibrated potentials'
+            ]
+
+
+            fig, axes = plt.subplots(2,1,sharex=True)
+            [axes[0].plot(Epoch_chunk[Mask_chunk[i] >= mask_limit],SC_potentials_chunk[i][Mask_chunk[i] >= mask_limit], lw=linewidth, label=legends[0][i]) for i in range(4)]
+            [axes[1].plot(Epoch_chunk[Mask_chunk[i] >= mask_limit],LP_potentials_calibr_chunk[i][Mask_chunk[i] >= mask_limit], lw=linewidth, label=legends[1][i]) for i in range(4)]
             
 
-        # Get the chunk of data to plot in this figure 
-        # ================================================
-        Epoch_chunk = Epoch[lower_i:upper_i]
-        LP_data_chunk = LP_data[:,lower_i:upper_i]
-        Mask_chunk = Mask[:,lower_i:upper_i]
+            # Setup for the subplots
+            for i in range(len(axes)):
+                axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+                axes[i].set_xlabel(xlabel)
+                axes[i].set_ylabel(plot_options.unit)
+                axes[i].set_title(titles[i])
+                axes[i].legend(loc='upper right')
+                axes[i].grid(True)  
+            fig.canvas.manager.set_window_title("LP potentials " + window_title)
 
 
-        # Plot probe differentials and single ended probe 
-        # ================================================
-        fig, axes = plt.subplots(2,1, sharex=True)
-        titles = ['Probe differentials','Single ended probe (P4)']
-        labels = ['P12', 'P23', 'P34', 'P4']
-
-        
-        [axes[0].plot(Epoch_chunk[Mask_chunk[i] >= mask_threshold],LP_data_chunk[i][Mask_chunk[i] >= mask_threshold],'o', markersize = 1, linestyle = 'None', label=labels[i]) for i in range(3)]
-        axes[1].plot(Epoch_chunk[Mask_chunk[3] >= mask_threshold],LP_data_chunk[3][Mask_chunk[3] >= mask_threshold],'o', markersize = 1, linestyle = 'None', label=labels[3])
-
-
-        # Setup for each of the subplots
-        for subplot_i in range(2):
-            # Set custom formatter for x-axis
-            axes[subplot_i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
-
-            # Add labels and legend
-            axes[subplot_i].set_title(titles[subplot_i])
-            axes[subplot_i].set_xlabel('Time')
-            axes[subplot_i].set_ylabel(ylabel[subplot_i])
-            axes[subplot_i].legend(loc='upper right')
-
-            # Show grid
-            axes[subplot_i].grid(True)
-
-        # Change window title
-        window_title = '20' + date[0:2] + '-' + date[2:4] + '-' + date[4:6] + ' Chunk number ' + str(chunk_i+1)
-        fig.canvas.manager.set_window_title(window_title)
-
-        # Rotate the x-axis labels for better readability
-        plt.gcf().autofmt_xdate()
-        
-
-        if plot_options.align_Efield:
-            plt.figure()
-            plt.plot(Epoch[lower_i:upper_i],E_field[0][lower_i:upper_i],'o', markersize = 1, linestyle = 'None', label='X')
-            plt.plot(Epoch[lower_i:upper_i],E_field[1][lower_i:upper_i],'o', markersize = 1, linestyle = 'None', label='Y')
-            plt.plot(Epoch[lower_i:upper_i],E_field[2][lower_i:upper_i],'o', markersize = 1, linestyle = 'None', label='Z')
-            plt.title('SC axes aligned E-field')
-            plt.xlabel('Time')
-            plt.ylabel(ylabel[0])
-            plt.legend(loc='upper right')
-            plt.grid(True)
-            # plt.canvas.manager.set_window_title(window_title)
             # Rotate the x-axis labels for better readability
             plt.gcf().autofmt_xdate()
     
+
+
+        # Plot probe differentials (either in voltages or TM)
+        # ================================================
+        if plot_options.probe_differentials:
+            LP_diffs_calibr_chunk = LP_diffs_calibr[:,lower_i:upper_i]
+
+            legends = [
+                'P12', 'P23', 'P34', 'P4']
+            titles = [
+                'Probe differentials',
+                'Calibrated probe diff.',
+                'Single ended (P4)'
+            ]
+
+
+            fig, axes = plt.subplots(3,1,sharex=True)
+            if plot_options.style == '-':
+                [axes[0].plot(Epoch_chunk[Mask_chunk[i] >= mask_limit],LP_diffs_chunk[i][Mask_chunk[i] >= mask_limit], lw=linewidth, label=legends[i]) for i in range(3)]
+                [axes[1].plot(Epoch_chunk[Mask_chunk[i] >= mask_limit],LP_diffs_calibr_chunk[i][Mask_chunk[i] >= mask_limit], lw=linewidth, label=legends[i]) for i in range(3)]          
+                axes[2].plot(Epoch_chunk[Mask_chunk[3] >= mask_limit],LP_diffs_calibr_chunk[3][Mask_chunk[3] >= mask_limit], lw = linewidth, label=legends[3])
+            # elif plot_options.style == 'o':
+            #     [plt.plot(Epoch_chunk[Mask_chunk[i] >= mask_limit],LP_diffs_chunk[i][Mask_chunk[i] >= mask_limit],'o', markersize = 1, linestyle = 'None',label=legends[i]) for i in range(4)]
+            
+            # Setup for the subplots
+            for i in range(len(axes)):
+                axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+                axes[i].set_xlabel(xlabel)
+                axes[i].set_ylabel(plot_options.unit)
+                axes[i].set_title(titles[i])
+                axes[i].legend(loc='upper right')
+                axes[i].grid(True)  
+            fig.canvas.manager.set_window_title('LP differentials ' + window_title)
+
+            # Rotate the x-axis labels for better readability
+            plt.gcf().autofmt_xdate()
+
+
+
+        # Plot electric field strenth in probe differentials
+        # ================================================
+        if plot_options.Efield:
+            EF_in_LPs_chunk = EF_in_LPs[:,lower_i:upper_i]
+            EF_in_LPs_calibr_chunk = EF_in_LPs_calibr[:,lower_i:upper_i]
+
+            fig, axes = plt.subplots(3,1, sharex=True)
+            titles = ['Probe differential E-field','Calibrated diff. E-field','Single ended probe (P4)']
+            legends = ['P12', 'P23', 'P34','P4']
+            ylabels = ['mV/m','mV/m','V']
+
+            if plot_options.style == '-':
+                [axes[0].plot(Epoch_chunk[Mask_chunk[i] >= mask_limit],EF_in_LPs_chunk[i][Mask_chunk[i] >= mask_limit], lw = linewidth, label=legends[i]) for i in range(3)]
+                [axes[1].plot(Epoch_chunk[Mask_chunk[i] >= mask_limit],EF_in_LPs_calibr_chunk[i][Mask_chunk[i] >= mask_limit], lw = linewidth, label=legends[i]) for i in range(3)]
+                axes[2].plot(Epoch_chunk[Mask_chunk[3] >= mask_limit],LP_diffs_chunk[3][Mask_chunk[3] >= mask_limit], lw = linewidth, label=legends[3])
+
+            # elif plot_options.style == 'o':
+            #     [axes[0].plot(Epoch_chunk[Mask_chunk[i] >= mask_limit],LP_diffs_chunk[i][Mask_chunk[i] >= mask_limit],'o', markersize = 1, linestyle = 'None',legends=labels[i]) for i in range(3)]
+            #     axes[2].plot(Epoch_chunk[Mask_chunk[3] >= mask_limit],LP_diffs_chunk[3][Mask_chunk[3] >= mask_limit],'o', markersize = 1, linestyle = 'None',legends=labels[3])
+
+
+            [axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter)) for i in range(len(axes))]
+            [axes[i].set_ylabel(ylabels[i]) for i in range(len(axes))]
+            [axes[i].legend(loc='upper right') for i in range(len(axes))]
+            [axes[i].set_title(titles[i]) for i in range(len(axes))]
+            [axes[i].grid(True) for i in range(len(axes))]
+            
+            fig.canvas.manager.set_window_title("EF " + window_title)
+
+            # Rotate the x-axis labels for better readability
+            plt.gcf().autofmt_xdate()
+
+
+
+        # Plot electric field strenth in x,y,z-axes
+        # ================================================
+        if plot_options.Efield_xyz:
+            EF_in_xyz_chunk = EF_in_xyz[:,lower_i:upper_i]
+            EF_in_xyz_calibr_chunk = EF_in_xyz_calibr[:,lower_i:upper_i]
+
+
+            fig, axes = plt.subplots(2,1, sharex=True)
+            titles = ['Calibrated axis aligned E-field','Single ended probe (P4)']
+            legends = [['x','y','z'],'P4']
+            ylabels = ['mV/m','V']
+            
+            if plot_options.style == '-':
+                [axes[0].plot(Epoch_chunk[Mask_chunk[i] >= mask_limit],EF_in_xyz_calibr_chunk[i][Mask_chunk[i] >= mask_limit], lw = linewidth, label=legends[0][i]) for i in range(3)]
+                axes[1].plot(Epoch_chunk[Mask_chunk[3] >= mask_limit],LP_diffs_chunk[3][Mask_chunk[3] >= mask_limit], lw = linewidth, label=legends[1])
+
+            # elif plot_options.style == 'o':
+            #     [axes[0].plot(Epoch_chunk[Mask_chunk[i] >= mask_limit],LP_diffs_chunk[i][Mask_chunk[i] >= mask_limit],'o', markersize = 1, linestyle = 'None',legends=labels[i]) for i in range(3)]
+            #     axes[2].plot(Epoch_chunk[Mask_chunk[3] >= mask_limit],LP_diffs_chunk[3][Mask_chunk[3] >= mask_limit],'o', markersize = 1, linestyle = 'None',legends=labels[3])
+
+
+            [axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter)) for i in range(len(axes))]
+            [axes[i].set_ylabel(ylabels[i]) for i in range(len(axes))]
+            [axes[i].legend(loc='upper right') for i in range(len(axes))]
+            [axes[i].set_title(titles[i]) for i in range(len(axes))]
+            [axes[i].grid(True) for i in range(len(axes))]
+            
+            fig.canvas.manager.set_window_title("EF_xyz " + window_title)
+
+            # Rotate the x-axis labels for better readability
+            plt.gcf().autofmt_xdate()
+            
+
 
     # Show all the plots
     # ================================================
@@ -227,10 +402,10 @@ if plot_plotly:
     fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
 
     # Create plotly express scatter plots
-    scatter_1 = px.scatter(x=Epoch, y=LP_data[0], labels={'y': 'P12'})
-    scatter_2 = px.scatter(x=Epoch, y=LP_data[1], labels={'y': 'P23'})
-    # scatter_3 = px.scatter(x=Epoch[lower_i:upper_i], y=LP_data[2][lower_i:upper_i], labels={'y': 'P34'})
-    # scatter_4 = px.scatter(x=Epoch[lower_i:upper_i], y=LP_data[3][lower_i:upper_i], labels={'y': 'P4'})
+    scatter_1 = px.scatter(x=Epoch, y=LP_diffs[0], labels={'y': 'P12'})
+    scatter_2 = px.scatter(x=Epoch, y=LP_diffs[1], labels={'y': 'P23'})
+    # scatter_3 = px.scatter(x=Epoch[lower_i:upper_i], y=LP_diffs[2][lower_i:upper_i], labels={'y': 'P34'})
+    # scatter_4 = px.scatter(x=Epoch[lower_i:upper_i], y=LP_diffs[3][lower_i:upper_i], labels={'y': 'P4'})
 
     # Add scatter plots to subplots
     fig.add_trace(scatter_1.data[0], row=1, col=1)
