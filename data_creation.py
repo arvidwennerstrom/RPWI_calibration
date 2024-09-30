@@ -26,7 +26,7 @@ rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
 
 #           Choose data to create
 # ================================================ 
-date = '240823'
+date = '240822'
 create_LP = True
 create_HK10002 = False
 create_HK10064 = False
@@ -128,10 +128,12 @@ if create_LP:
         if True:
             list_of_start_files = [
                 "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240126T090524_V03",
+                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240706T023204_V01.cdf",
+                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240819T202634_V01.cdf",
                 "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240820T180737_V01.cdf",
                 "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240823T035821_V01.cdf",
-                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240126T090524_V03.cdf"
-            ]
+                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240126T090524_V03.cdf"]
+            
             for filename_2 in list_of_start_files:    
                 if filename == filename_2:
                     removal_width = 32 # Number of samples to remove
