@@ -1,130 +1,154 @@
+
 # RPWI Electric field data
 # By: Arvid Wennerström"
 
 
-
-# ================================================
-#               Imports & Stuff 
-# ================================================
-import numpy as np
-from rpwi_data import rpwi_data  
-from rpwi_data import calibration_coefficients
+# ========================================================================
+# ========================================================================
+#                           IMPORTS
+# ========================================================================
+# ========================================================================
+import numpy as np, scipy
 from math import ceil
 
-# ================================================
-#               Classes & Functions 
-# ================================================
-class Plot_options:
-    def __init__(self,style='lines',unit = 'V',potential_at_probes = False,probe_differentials = False,Efield = False,Efield_xyz = False):
-        self.style = style
-        self.unit = unit
-        self.potential_at_probes = potential_at_probes
-        self.probe_differentials = probe_differentials
-        self.Efield = Efield
-        self.Efield_xyz = Efield_xyz
-        
-
-def tt2000_to_readable(tt2000,precision = 9):
-    # Convert TT2000 (nanoseconds) to ephemeris time (TDB) in seconds
-    ephem_time = spice.unitim(tt2000/ 1e9, 'TT', 'TDB')
-
-    
-    # Convert ephemeris time to human-readable UTC string
-    utcs = spice.spiceypy.et2utc(ephem_time , format_str='ISOC', prec=precision)
-
-    # # Extract only the time part (remove the date)
-    # readable = utcs.split('T')[1]
-
-    # Return all but year
-    readable = utcs[5:]
-    
-    return readable
+from rpwi_data import rpwi_data, coeffs_TM2voltage  
+from plotting_support import datenum_to_tt2000, tt2000_to_readable, dynamic_time_formatter
+# ========================================================================
 
 
-# Custom formatter function to convert displayed tt2000 values dynamically
-def dynamic_time_formatter(x, pos):
-    # Get the current limits of the x-axis to adjust precision based on zoom level
-    current_xlim = plt.gca().get_xlim()
-    range_x = current_xlim[1] - current_xlim[0]
 
-    # Adjust precision based on zoom level
-    if range_x > 1e12:  # Very zoomed out, show only date
-        precision = 0
-    elif range_x > 1e9:  # Show hours
-        precision = 3
-    elif range_x > 1e6:  # Show hours and minutes
-        precision = 6
-    else:  # Show full precision down to seconds
-        precision = 9
+# ========================================================================
+# ========================================================================
+#               INPUT OPTIONS AND SETTINGS FOR PLOTTING
+# ========================================================================
+# ========================================================================
 
-
-    # Convert the tt2000 time to human-readable format with the determined precision
-    readable_time = tt2000_to_readable(x,precision)
-    return readable_time
-
-
-# ================================================
-# ================================================
-#                   Main
-# ================================================
-# ================================================
-
-# Input overall directory path, where folders 
-# "datasets", "data_created" and "spice" exist
-# ================================================ 
+#  Input overall directory path, where folders "datasets", "data_created" and "spice" exist
+# ========================================================================
+rootDir = "C:/Users/1/Onedrive - KTH/MEX/IRF" # My desktop
 rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
 rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
-date = '240822'
-
-
-#           Choose settings for plot
-# ================================================
-plot_matplotlib = True 
-plot_plotly = False
-
-
-# NOTE: LP_data is now always converted to voltage from TM, so unit selection 
-# does nothing. This might be desirable to change in the future.
-# Plot style:                       'lines'/'dots'
-# Unit:                             'TM'/'V' (voltage)
-# SC potential at each probe:       True/False
-# Probe differentials (TM or V):    True/False
-# Electric field:                   True/False
-# SC axes aligned E-field:          True/False
-plot_options = Plot_options('lines','V',True,True,True,True)
 
 
 
-# Specifiy a time period on format "HH:MM:SS.ns*" (Optional)
+# Input date and time (optional) of the data to plot.
+# ========================================================================#
+date = '240820'
+
+# Specify time period on format "HH:MM:SS.ns*"
 # Precision is also optional, "08" and "08.30:20.500" are equally valid 
-plot_time_period = []
+plot_time_period = ['21:07:53.629000','23:59']
 
 
 
+# Select masking option 
+# ========================================================================
 # 1: TM saturation (either high or low).
 # 2: Interference with RIME instrument.
 # 3: Lunar wake data, will overwrite '1'.
 # 4: High quality data, this does not contain any contaminations.
-mask_limit = 3
+mask_limit = 4
 
 
 
-#               Load data
-# ================================================
-loaded_LP = np.load(rootDir + "/data_created/LP-SID1_" + date + ".npz")
-Epoch = loaded_LP["Epoch"]
-LP_diffs_TM = loaded_LP["LP_data"]
-Mask = loaded_LP["Mask"]
-LP_diffs = calibration_coefficients*LP_diffs_TM
+# Select what data to plot and style
+# ========================================================================
+# NOTE: LP_data is now always converted to voltage from TM, so unit selection 
+# does nothing. This might be desirable to change in the future.
+plot_looks = {
+    'Style':'lines',
+    'Unit':'V'}
+
+plots_2_show = {
+    'Potential at probes': True,
+    'Probe diffs': False,
+    'E-field': False,
+    'E-field_xyz': False,
+    'DC_offset': True,
+    'Sweep': False,
+    'Plasmasphere idea': False}
 
 
-#   Add SPICE-kernels, for converting time to human-readable
-# ================================================
+
+# Select type of plots
+# ========================================================================
+plot_matplotlib = True 
+plot_plotly = False
+
+
+
+# Additional options, these will probably be removed in the future
+# ========================================================================
+DC_offset_option = 3
+
+
+# Limit size of chunks to ensure better plot performance.
+# I got 1024*512 (=524 288) from Ilona as a benchmark size, 
+# but found that 5e6 works well for me
+chunk_size_limit = 5e6  
+
+
+
+# ========================================================================
+# ========================================================================
+#                           READ AND HANDLE DATA
+# ========================================================================
+# ========================================================================
+
+#   Add SPICE-kernels, for converting time between tt2000 and human-readable
+# ========================================================================
 import spiceypy as spice    
 ls_spice_kernels = [
     (rootDir + '/spice/JUICE/kernels/lsk/naif0012.tls'),
     (rootDir + '/spice/JUICE/kernels/sclk/juice_step_240828_v01.tsc')]
 spice.furnsh(ls_spice_kernels)
+
+
+
+#               Load E-field data
+# ========================================================================
+loaded_LP = np.load(rootDir + "/data_created/LP-SID1_" + date + ".npz")
+Epoch = loaded_LP["Epoch"]
+LP_diffs_TM = loaded_LP["LP_data"]
+Mask = loaded_LP["Mask"]
+
+date_long = '20' + date[0:2] + '-' + date[2:4] + '-' + date[4:6]
+
+
+
+#               Load sweep data 
+# NOTE: This should use regular expr.
+# ========================================================================
+if date == '240820':
+    mat_data = scipy.io.loadmat(rootDir + '/sweep_data/lpstruc_20' + date + '_2_20241002.mat')
+    t_sweep = mat_data['lpstruc']['t_sweep'][0][0]
+    Usc = mat_data['lpstruc']['Usc'][0][0]
+    Ni = abs(mat_data['lpstruc']['Ni'][0][0])
+
+    Epoch_sweep = [datenum_to_tt2000(t[0])*1e9 for t in t_sweep]  
+
+
+# Select only data of specific times, when a time interval has been provided
+# ========================================================================
+if plot_time_period != []:
+    utc_time_begin = date_long + 'T' + plot_time_period[0]
+    utc_time_end = date_long + 'T' + plot_time_period[1]
+
+    # Convert UTC to Ephemeris Time (ET), ET to TT (Terrestrial Time)
+    # and then multiply by 1e9 to get on same format as "Epoch"
+    tt_time_begin = spice.unitim(spice.utc2et(utc_time_begin), "ET", "TT")*1e9
+    tt_time_end = spice.unitim(spice.utc2et(utc_time_end), "ET", "TT")*1e9
+
+    included_data = (Epoch > tt_time_begin) & (Epoch < tt_time_end)
+    Epoch = Epoch[included_data]
+    LP_diffs_TM = LP_diffs_TM[:,included_data]
+    Mask = Mask[:,included_data]
+
+
+
+# Conert raw data to voltages, from TM units
+# ========================================================================
+LP_diffs = coeffs_TM2voltage*LP_diffs_TM
 
 
 
@@ -139,53 +163,76 @@ LP_potentials[1] = LP_potentials[2] + LP_diffs[1]
 LP_potentials[0] = LP_potentials[1] + LP_diffs[0]
 
 
+
 # Calculating linear DC offsets, using U4 = Un' = Un + dUn, for n = 1,2,3
 # ================================================
-DC_offset1 = np.mean(LP_potentials[3] - LP_potentials[0])
-DC_offset2 = np.mean(LP_potentials[3] - LP_potentials[1])
-DC_offset3 = np.mean(LP_potentials[3] - LP_potentials[2])
+# DC_offsets are np.arrays, with each value corresponding to a data value, to allow
+# changes in offsets based on for example changes in plasma density. They are initialized below.
+DC_offset1 = np.zeros(len(LP_potentials[3]))
+DC_offset2 = np.zeros(len(LP_potentials[3]))
+DC_offset3 = np.zeros(len(LP_potentials[3]))
 
+
+# Very simple, just average over all of the data. Works poorly when data includes
+# measurements in both high and low density plasma, such as plasmasphere on 20240820
+if DC_offset_option == 1:
+    DC_offset1 = DC_offset1 + np.mean(LP_potentials[3] - LP_potentials[0])
+    DC_offset2 = DC_offset2 + np.mean(LP_potentials[3] - LP_potentials[1])
+    DC_offset3 = DC_offset3 + np.mean(LP_potentials[3] - LP_potentials[2])
+
+
+# A bit less simple: The offsets are averaged over sections of the data, 
+# based on plot shape (voltage value corresponds to plasma density, 
+# affecting the need for offset correction).
+if DC_offset_option == 2:
+    weight = 0.8
+    # First chunk will be from start until first split, then  
+    tt_splits = [
+        spice.unitim(spice.utc2et(date_long), "ET", "TT")*1e9,
+        spice.unitim(spice.utc2et(date_long + 'T20:38:10'), "ET", "TT")*1e9,
+        spice.unitim(spice.utc2et(date_long + 'T20:13:10'), "ET", "TT")*1e9,
+        spice.unitim(spice.utc2et(date_long + 'T21:30:30'), "ET", "TT")*1e9,
+        spice.unitim(spice.utc2et(date_long + 'T22:33:40'), "ET", "TT")*1e9,
+        spice.unitim(spice.utc2et(date_long + 'T23:03:40'), "ET", "TT")*1e9,
+    ]
+    for split_point in tt_splits:
+        split = Epoch > split_point
+
+        if split_point == spice.unitim(spice.utc2et(date_long + 'T21:30:30'), "ET", "TT")*1e9:        
+            DC_offset1[split] = 0.1
+            DC_offset2[split] = 0.1
+            DC_offset3[split] = 0.05
+        else:
+            DC_offset1[split] = weight*np.mean(LP_potentials[3][split] - LP_potentials[0][split])
+            DC_offset2[split] = weight*np.mean(LP_potentials[3][split] - LP_potentials[1][split])
+            DC_offset3[split] = weight*np.mean(LP_potentials[3][split] - LP_potentials[2][split])
+
+
+
+# Trying to relate DC offset to plasma density. This works pretty well for plasmasphere data, 
+# but I don't know how well it relates to physics
+if DC_offset_option == 3:
+    f_Ni = scipy.interpolate.interp1d(Epoch_sweep,[i[0] for i in Ni], kind='linear', fill_value='extrapolate')
+    N_interpolated = f_Ni(Epoch)
+
+    N_max = round(max(Ni)[0])
+    power = 0.2
+    
+    low_n_offset = [1, 0.8, 0.7]
+
+    DC_offset1 = low_n_offset[0] + (-low_n_offset[0])/(N_max**power)*N_interpolated**power
+    DC_offset2 = low_n_offset[1] + (-low_n_offset[1])/(N_max**power)*N_interpolated**power
+    DC_offset3 = low_n_offset[2] + (-low_n_offset[2])/(N_max**power)*N_interpolated**power
+
+
+
+# Apply DC offsets
+# ================================================
 LP_potentials_calibr = np.zeros(LP_potentials.shape)
 LP_potentials_calibr[0] = LP_potentials[0] + DC_offset1
 LP_potentials_calibr[1] = LP_potentials[1] + DC_offset2
 LP_potentials_calibr[2] = LP_potentials[2] + DC_offset3
 LP_potentials_calibr[3] = LP_potentials[3]
-
-
-
-# # NOTE: All of this might be unnecessary, it scales U1, U2 and U3 by k's,
-# # which does not yield DC offsets
-# # ================================================
-# # NOTE: Simple way of doing it, but is problematic when LP[3]/LP[n] --> inf.
-# k1 = np.mean(LP_potentials[3]/LP_potentials[0])
-# k2 = np.mean(LP_potentials[3]/LP_potentials[1])
-# k3 = np.mean(LP_potentials[3]/LP_potentials[2])
-
-
-# # NOTE: Alternative way, this removes outliers from LP[3]/LP[n] --> inf,
-# # by filtering using standard deviation
-# if True:
-#     from scipy import stats
-#     std_dev_limit = 10
-
-#     k1_all = LP_potentials[3]/LP_potentials[0]
-#     k2_all = LP_potentials[3]/LP_potentials[1]
-#     k3_all = LP_potentials[3]/LP_potentials[2]
-
-#     z_score1 = np.abs(stats.zscore(k1_all))
-#     z_score2 = np.abs(stats.zscore(k2_all))
-#     z_score3 = np.abs(stats.zscore(k3_all))
-
-#     k1 = np.mean(k1_all[z_score1 < std_dev_limit])
-#     k2 = np.mean(k2_all[z_score2 < std_dev_limit])
-#     k3 = np.mean(k3_all[z_score3 < std_dev_limit])
-
-# LP_potentials_calibr = np.zeros(LP_potentials.shape)
-# LP_potentials_calibr[3] = LP_potentials[3]
-# LP_potentials_calibr[2] = k3*LP_potentials[2]
-# LP_potentials_calibr[1] = k2*LP_potentials[1]
-# LP_potentials_calibr[0] = k1*LP_potentials[0]
-# # ================================================
 
 
 
@@ -201,7 +248,7 @@ LP_diffs_calibr[0] = LP_potentials_calibr[0] - LP_potentials_calibr[1]
 
 # Get E-field between probes
 # ================================================
-if plot_options.Efield: 
+if plots_2_show['E-field']: 
     # 1e3's are used to give EF in mV/m, rather than V/m
 
     # NOTE: This is for mode 0
@@ -219,7 +266,7 @@ if plot_options.Efield:
 
 # Calculate E-field in SC x-,y- and z-axes
 # ================================================
-if plot_options.Efield_xyz:
+if plots_2_show['E-field_xyz']:
 
     # M is transformation matrix in: U = M*E, where U is voltage and E is electric field
     M = [rpwi_data.LP12_distance,
@@ -238,89 +285,72 @@ if plot_options.Efield_xyz:
 # ================================================
 if plot_matplotlib:
     import matplotlib.pyplot as plt
-    from matplotlib.ticker import FuncFormatter
-    
+    from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 
     # Divide the data into chunks, by either number of data points in "limit" OR
     # if a time interval has been specified. Then plot a new figure for each chunk.
     # ================================================================
     if plot_time_period == []:
-        limit = 5.3e6 # I got 1024*512 (=524 288) from Ilona as a benchmark size 
-        number_of_data_chunks = ceil(len(Epoch)/limit)
-        chunk_size = round(len(Epoch)/number_of_data_chunks)
+        number_of_data_chunks = ceil(len(Epoch)/chunk_size_limit)
     else:
         number_of_data_chunks = 1
+    chunk_size = round(len(Epoch)/number_of_data_chunks)
 
 
     for chunk_i in range(number_of_data_chunks):
         # Decide and get data that belongs to this chunk, 
         # by creating a True/False masking array "chunk",
         # that tells which values to include.  
-        # ================================================
-        if plot_time_period == []:      
-            lower_i = int(chunk_size*chunk_i)
-            upper_i = int(chunk_size*(chunk_i+1)-1)
-      
-            chunk = np.zeros(Epoch.shape, dtype=bool)
-            chunk[lower_i:upper_i] = True
+        # ================================================  
+        lower_i = int(chunk_size*chunk_i)
+        upper_i = int(chunk_size*(chunk_i+1)-1)
+        chunk = np.zeros(Epoch.shape, dtype=bool)
+        chunk[lower_i:upper_i] = True
 
-
-        else:
-            utc_time_begin = '20' + date[0:2] + '-' + date[2:4] + '-' + date[4:6] + 'T' + plot_time_period[0]
-            utc_time_end = '20' + date[0:2] + '-' + date[2:4] + '-' + date[4:6] + 'T' + plot_time_period[1]
-
-            # Convert UTC to Ephemeris Time (ET), ET to TT (Terrestrial Time)
-            # and then multiply by 1e9 to get on same format as "Epoch"
-            tt_time_begin = spice.unitim(spice.utc2et(utc_time_begin), "ET", "TT")*1e9
-            tt_time_end = spice.unitim(spice.utc2et(utc_time_end), "ET", "TT")*1e9
-
-            chunk = (Epoch > tt_time_begin) & (Epoch < tt_time_end)
-
-
-        Epoch[chunk] = Epoch[chunk]
-        LP_diffs_chunk = LP_diffs[:,chunk]
-        Mask[:,chunk] = Mask[:,chunk]
 
 
         # General plot setup
         # ================================================
-        window_title = '20' + date[0:2] + '-' + date[2:4] + '-' + date[4:6] + ' Chunk ' + str(chunk_i+1) + ' (of ' + str(number_of_data_chunks) + ')'
-        if plot_options.style == 'lines':
-            plot_style = {
-                'linewidth': '0.3',
-            }
-        elif plot_options.style == 'dots':
-            plot_style = {
+        window_title = date_long + ' Chunk ' + str(chunk_i+1) + ' (of ' + str(number_of_data_chunks) + ')'
+        plot_style_options = [
+            {
+                'linewidth': '0.5',},
+            
+            {
                 'marker': 'o',
                 'markersize': '0.5',
-                'linestyle': 'None'
-            }
+                'linestyle': 'None'}]
+
+        if plot_looks['Style'] == 'lines':
+            plot_style = plot_style_options[0]
+        elif plot_looks['Style'] == 'dots':
+            plot_style = plot_style_options[1]
         xlabel = "Timestamp (UTC)"
 
 
 
         # Plot SC potential at each probe
         # ================================================
-        if plot_options.potential_at_probes:
+        if plots_2_show['Potential at probes']:
             legends = [
                 ['P01 (P12+P23+P34+P04)', 'P02 (P23+P34+P04)', 'P03 (P34+P04)', 'P04'],
                 ['U1 + dU1', 'U2 + dU2', 'U3 + dU3', 'U4']]  
             titles = [
-                'SC potential at each probe',
+                'Probe to SC potential',
                 'Calibrated potentials']
 
 
             fig, axes = plt.subplots(2,1,sharex=True)
-            [axes[0].plot(Epoch[chunk][Mask[:,chunk][i] >= mask_limit],LP_potentials[:,chunk][i][Mask[:,chunk][i] >= mask_limit], **plot_style, label=legends[0][i]) for i in range(4)]
-            [axes[1].plot(Epoch[chunk][Mask[:,chunk][i] >= mask_limit],LP_potentials_calibr[:,chunk][i][Mask[:,chunk][i] >= mask_limit], **plot_style, label=legends[1][i]) for i in range(4)]
+            [axes[0].plot(Epoch[chunk][Mask[i,chunk] >= mask_limit],LP_potentials[i,chunk][Mask[i,chunk] >= mask_limit], **plot_style, label=legends[0][i]) for i in range(4)]
+            [axes[1].plot(Epoch[chunk][Mask[i,chunk] >= mask_limit],LP_potentials_calibr[i,chunk][Mask[i,chunk] >= mask_limit], **plot_style, label=legends[1][i]) for i in range(4)]
             
 
             # Setup for the subplots
             for i in range(len(axes)):
                 axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
                 axes[i].set_xlabel(xlabel)
-                axes[i].set_ylabel(plot_options.unit)
+                axes[i].set_ylabel(plot_looks['Unit'])
                 axes[i].set_title(titles[i])
                 axes[i].legend(loc='upper right')
                 axes[i].grid(True)  
@@ -334,7 +364,7 @@ if plot_matplotlib:
 
         # Plot probe differentials (either in voltages or TM)
         # ================================================
-        if plot_options.probe_differentials:
+        if plots_2_show['Probe diffs']:
             legends = ['P12', 'P23', 'P34', 'P4']
             titles = [
                 'Probe differentials',
@@ -343,16 +373,16 @@ if plot_matplotlib:
 
 
             fig, axes = plt.subplots(3,1,sharex=True)
-            [axes[0].plot(Epoch[chunk][Mask[:,chunk][i] >= mask_limit],LP_diffs_chunk[i][Mask[:,chunk][i] >= mask_limit], **plot_style, label=legends[i]) for i in range(3)]
-            [axes[1].plot(Epoch[chunk][Mask[:,chunk][i] >= mask_limit],LP_diffs_calibr[:,chunk][i][Mask[:,chunk][i] >= mask_limit], **plot_style, label=legends[i]) for i in range(3)]          
-            axes[2].plot(Epoch[chunk][Mask[:,chunk][3] >= mask_limit],LP_diffs_calibr[:,chunk][3][Mask[:,chunk][3] >= mask_limit], **plot_style, label=legends[3])
+            [axes[0].plot(Epoch[chunk][Mask[i,chunk] >= mask_limit],LP_diffs[i,chunk][Mask[i,chunk] >= mask_limit], **plot_style, label=legends[i]) for i in range(3)]
+            [axes[1].plot(Epoch[chunk][Mask[i,chunk] >= mask_limit],LP_diffs_calibr[i,chunk][Mask[i,chunk] >= mask_limit], **plot_style, label=legends[i]) for i in range(3)]          
+            axes[2].plot(Epoch[chunk][Mask[3,chunk] >= mask_limit],LP_diffs_calibr[3,chunk][Mask[3,chunk] >= mask_limit], **plot_style, label=legends[3])
 
 
             # Setup for the subplots
             for i in range(len(axes)):
                 axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
                 axes[i].set_xlabel(xlabel)
-                axes[i].set_ylabel(plot_options.unit)
+                axes[i].set_ylabel(plot_looks['Unit'])
                 axes[i].set_title(titles[i])
                 axes[i].legend(loc='upper right')
                 axes[i].grid(True)  
@@ -363,9 +393,9 @@ if plot_matplotlib:
 
 
 
-        # Plot electric field strenth in probe differentials
+        # Plot electric field strength in probe differentials
         # ================================================
-        if plot_options.Efield:
+        if plots_2_show['E-field']:
             fig, axes = plt.subplots(3,1, sharex=True)
             titles = [
                 'Probe differential E-field',
@@ -375,17 +405,17 @@ if plot_matplotlib:
             ylabels = ['mV/m','mV/m','V']
 
 
-            [axes[0].plot(Epoch[chunk][Mask[:,chunk][i] >= mask_limit],EF_in_LPs[:,chunk][i][Mask[:,chunk][i] >= mask_limit], **plot_style, label=legends[i]) for i in range(3)]
-            [axes[1].plot(Epoch[chunk][Mask[:,chunk][i] >= mask_limit],EF_in_LPs_calibr[:,chunk][i][Mask[:,chunk][i] >= mask_limit], **plot_style, label=legends[i]) for i in range(3)]
-            axes[2].plot(Epoch[chunk][Mask[:,chunk][3] >= mask_limit],LP_diffs_chunk[3][Mask[:,chunk][3] >= mask_limit], **plot_style, label=legends[3])
+            [axes[0].plot(Epoch[chunk][Mask[i,chunk] >= mask_limit],EF_in_LPs[i,chunk][Mask[i,chunk] >= mask_limit], **plot_style, label=legends[i]) for i in range(3)]
+            [axes[1].plot(Epoch[chunk][Mask[i,chunk] >= mask_limit],EF_in_LPs_calibr[i,chunk][Mask[i,chunk] >= mask_limit], **plot_style, label=legends[i]) for i in range(3)]
+            axes[2].plot(Epoch[chunk][Mask[3,chunk] >= mask_limit],LP_diffs[3,chunk][Mask[3,chunk] >= mask_limit], **plot_style, label=legends[3])
 
+            for i in range(len(axes)):
+                axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+                axes[i].set_ylabel(ylabels[i])
+                axes[i].legend(loc='upper right')
+                axes[i].set_title(titles[i])
+                axes[i].grid(True)
 
-            [axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter)) for i in range(len(axes))]
-            [axes[i].set_ylabel(ylabels[i]) for i in range(len(axes))]
-            [axes[i].legend(loc='upper right') for i in range(len(axes))]
-            [axes[i].set_title(titles[i]) for i in range(len(axes))]
-            [axes[i].grid(True) for i in range(len(axes))]
-            
             fig.canvas.manager.set_window_title("EF " + window_title)
 
             # Rotate the x-axis labels for better readability
@@ -395,22 +425,22 @@ if plot_matplotlib:
 
         # Plot electric field strenth in x,y,z-axes
         # ================================================
-        if plot_options.Efield_xyz:
+        if plots_2_show['E-field_xyz']:
             fig, axes = plt.subplots(2,1, sharex=True)
             titles = ['Calibrated axis aligned E-field','Single ended probe (P4)']
             legends = [['x','y','z'],'P4']
             ylabels = ['mV/m','V']
             
 
-            [axes[0].plot(Epoch[chunk][Mask[:,chunk][i] >= mask_limit],EF_in_xyz_calibr[:,chunk][i][Mask[:,chunk][i] >= mask_limit], **plot_style, label=legends[0][i]) for i in range(3)]
-            axes[1].plot(Epoch[chunk][Mask[:,chunk][3] >= mask_limit],LP_diffs_chunk[3][Mask[:,chunk][3] >= mask_limit], **plot_style, label=legends[1])
+            [axes[0].plot(Epoch[chunk][Mask[i,chunk] >= mask_limit],EF_in_xyz_calibr[i,chunk][Mask[i,chunk] >= mask_limit], **plot_style, label=legends[0][i]) for i in range(3)]
+            axes[1].plot(Epoch[chunk][Mask[3,chunk] >= mask_limit],LP_diffs[3,chunk][Mask[3,chunk] >= mask_limit], **plot_style, label=legends[1])
 
-
-            [axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter)) for i in range(len(axes))]
-            [axes[i].set_ylabel(ylabels[i]) for i in range(len(axes))]
-            [axes[i].legend(loc='upper right') for i in range(len(axes))]
-            [axes[i].set_title(titles[i]) for i in range(len(axes))]
-            [axes[i].grid(True) for i in range(len(axes))]
+            for i in range(len(axes)):
+                axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+                axes[i].set_ylabel(ylabels[i])
+                axes[i].legend(loc='upper right')
+                axes[i].set_title(titles[i])
+                axes[i].grid(True)
             
             fig.canvas.manager.set_window_title("EF_xyz " + window_title)
 
@@ -419,57 +449,145 @@ if plot_matplotlib:
             
 
 
+        # DC offset used in calibration
+        # ========================================================================
+        if plots_2_show['DC_offset']:
+            plt.figure()
+            plt.plot(Epoch,DC_offset1, label='DC_offset1')
+            plt.plot(Epoch,DC_offset2, label='DC_offset2')
+            plt.plot(Epoch,DC_offset3, label='DC_offset3')
+            plt.legend(loc='upper right')
+            plt.grid(True)
+            plt.gca().xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+            plt.gcf().autofmt_xdate()
+
+
+
+
+        # Plot sweep SC potential
+        # ========================================================================
+        if plots_2_show['Sweep']:    
+
+            # Interpolation of low-resolution data to high-resolution time points
+            f = scipy.interpolate.interp1d(Epoch_sweep,[u[0] for u in Usc], kind='linear', fill_value='extrapolate')
+            Usc_interpolated = f(Epoch)
+    
+
+            fig, axes = plt.subplots(2,1, sharex=True)
+            titles = [
+                'E-field and sweep SC potentials',
+                'Difference']
+
+            axes[0].plot(Epoch,LP_potentials[3], **plot_style, label='P04')
+            axes[0].plot(Epoch,-Usc_interpolated, **plot_style, label='-Usc')
+            axes[1].plot(Epoch,LP_potentials[3]+Usc_interpolated, **plot_style, label='P04 + Usc')
+
+            for i in range(len(axes)):
+                axes[i].xaxis.set_major_locator(MaxNLocator(nbins=10))
+                axes[i].xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+                axes[i].set_ylabel('V')
+                axes[i].legend(loc='upper right')
+                axes[i].set_title(titles[i])
+                axes[i].grid(True)
+            fig.canvas.manager.set_window_title("Sweep SC potential " + window_title)
+
+            # Rotate the x-axis labels for better readability
+            plt.gcf().autofmt_xdate()
+
+
+
+        # ========================================================================
+        if plots_2_show['Plasmasphere idea']:
+            U1 = LP_potentials[0,chunk][Mask[0,chunk] >= mask_limit]
+            U2 = LP_potentials[1,chunk][Mask[1,chunk] >= mask_limit]
+            U3 = LP_potentials[2,chunk][Mask[2,chunk] >= mask_limit]
+            U4 = LP_potentials[3,chunk][Mask[3,chunk] >= mask_limit]
+            
+            fig, axes = plt.subplots(2,1,sharex=True)
+            axes[0].plot(U1,U4, **plot_style_options[1], label='U1')
+            axes[0].plot(U2,U4, **plot_style_options[1], label='U2')
+            axes[0].plot(U3,U4, **plot_style_options[1], label='U3')
+            axes[1].plot(U4-U1,U4, **plot_style_options[1], label='U4-U1')
+            axes[1].plot(U4-U2,U4, **plot_style_options[1], label='U4-U2')
+            axes[1].plot(U4-U3,U4, **plot_style_options[1], label='U4-U3')
+
+            for i in range(2):
+                axes[i].legend(loc='lower right')
+                axes[i].set_ylabel('U4')   
+                axes[i].grid(True)
+                axes[i].set_title('Alternative ' + str(i))
+            fig.canvas.manager.set_window_title("Plasmasphere idea " + window_title)
+
+
         # This chunk's plots
         # ================================================
         plt.show()
 
 
 
-# if plot_plotly:
-#     #               Plot (using plotly)
-#     # ================================================
-#     import plotly.graph_objects as go
-#     import plotly.express as px
-#     from plotly.subplots import make_subplots
-
-#     fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
-
-#     # Create plotly express scatter plots
-#     scatter_1 = px.scatter(x=Epoch, y=LP_diffs[0], labels={'y': 'P12'})
-#     scatter_2 = px.scatter(x=Epoch, y=LP_diffs[1], labels={'y': 'P23'})
-#     # scatter_3 = px.scatter(x=Epoch[lower_i:upper_i], y=LP_diffs[2][lower_i:upper_i], labels={'y': 'P34'})
-#     # scatter_4 = px.scatter(x=Epoch[lower_i:upper_i], y=LP_diffs[3][lower_i:upper_i], labels={'y': 'P4'})
-
-#     # Add scatter plots to subplots
-#     fig.add_trace(scatter_1.data[0], row=1, col=1)
-#     fig.add_trace(scatter_2.data[0], row=1, col=1)
-#     # fig.add_trace(scatter_3.data[0], row=1, col=1)
-#     # fig.add_trace(scatter_4.data[0], row=2, col=1)
-
-#     # Update layout for the figure
-#     fig.update_layout(title_text="LP Data with Shared X-Axis")
-
-#     # Show grid for both subplots
-#     fig.update_xaxes(showgrid=True)
-#     fig.update_yaxes(showgrid=True)
-
-#     # Add x-axis and y-axis labels
-#     fig.update_xaxes(title_text="Time", row=2, col=1)
-#     fig.update_yaxes(title_text=ylabel[0], row=1, col=1)
-#     fig.update_yaxes(title_text=ylabel[1], row=2, col=1)
-
-#     # Show the plot
-#     fig.show()
 
 
- 
-#     # # Melt the DataFrame to a long format
-#     # df_melted = df.melt(id_vars='x', value_vars=['y1', 'y2', 'y3', 'y4'], var_name='Series', value_name='y')
+#                 Plot (using plotly)
+# ================================================
+if plot_plotly:
+    pass
+   
+    # import plotly.graph_objects as go
+    # import plotly.express as px
+    # from plotly.subplots import make_subplots
+
+    # fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
+
+    # Create plotly express scatter plots
+    # scatter_1 = px.scatter(x=Epoch, y=LP_diffs[0], labels={'y': 'P12'})
+    # scatter_2 = px.scatter(x=Epoch, y=LP_diffs[1], labels={'y': 'P23'})
+    # scatter_3 = px.scatter(x=Epoch[lower_i:upper_i], y=LP_diffs[2][lower_i:upper_i], labels={'y': 'P34'})
+    # scatter_4 = px.scatter(x=Epoch[lower_i:upper_i], y=LP_diffs[3][lower_i:upper_i], labels={'y': 'P4'})
+
+    # Add scatter plots to subplots
+    # fig.add_trace(scatter_1.data[0], row=1, col=1)
+    # fig.add_trace(scatter_2.data[0], row=1, col=1)
+    # fig.add_trace(scatter_3.data[0], row=1, col=1)
+    # fig.add_trace(scatter_4.data[0], row=2, col=1)
+
+    # Update layout for the figure
+    # fig.update_layout(title_text="LP Data with Shared X-Axis")
+
+    # Show grid for both subplots
+    # fig.update_xaxes(showgrid=True)
+    # fig.update_yaxes(showgrid=True)
+
+    # Add x-axis and y-axis labels
+    # fig.update_xaxes(title_text="Time", row=2, col=1)
+    # fig.update_yaxes(title_text=ylabel[0], row=1, col=1)
+    # fig.update_yaxes(title_text=ylabel[1], row=2, col=1)
+
+    # Show the plot
+    # fig.show()
 
 
-#     # # Create scatter plot
-#     # fig = px.scatter(df_melted, x='x', y ='y', color='Series')
 
-#     # # Show the plot
-#     # fig.show()
+    # # Melt the DataFrame to a long format
+    # df_melted = df.melt(id_vars='x', value_vars=['y1', 'y2', 'y3', 'y4'], var_name='Series', value_name='y')
 
+
+    # # Create scatter plot
+    # fig = px.scatter(df_melted, x='x', y ='y', color='Series')
+
+    # # Show the plot
+    # fig.show()
+
+
+
+# # NOTE: This has nothing to do with plotting, just a request by Jan-Erik
+# # ================================================
+# if date == '240820':
+#     import scipy.io
+#     Epoch_test = Epoch[chunk][Mask[3,chunk] >= mask_limit]
+#     P4_test = LP_potentials[3,chunk][Mask[3,chunk] >= mask_limit]
+#     scipy.io.savemat((rootDir + '/P04_20240820T200000.mat'),{'Epoch': Epoch_test,'P04': P4_test})
+
+#     fig, ax = plt.subplots(1,1)
+#     ax.plot(Epoch_test,P4_test)
+#     ax.xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+#     plt.show()

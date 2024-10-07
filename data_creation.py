@@ -6,11 +6,7 @@
 # ================================================
 #               Imports & Stuff 
 # ================================================
-import pycdfpp
-import os
-import re
-import numpy as np
-
+import pycdfpp, os, re, numpy as np
 
 # ================================================
 #               Main
@@ -19,6 +15,7 @@ import numpy as np
 # Input overall directory path, where folders 
 # "datasets", "data_created" and "spice" exist
 # ================================================ 
+rootDir = "C:/Users/1/Onedrive - KTH/MEX/IRF" # My desktop
 rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
 rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
 
@@ -26,7 +23,7 @@ rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
 
 #           Choose data to create
 # ================================================ 
-date = '240822'
+date = '240820'
 create_LP = True
 create_HK10002 = False
 create_HK10064 = False
@@ -58,6 +55,16 @@ for filename in os.listdir(datasetDir):
 
 
 
+#   Add SPICE-kernels, for converting time between tt2000 and human-readable
+# ================================================
+import spiceypy as spice    
+ls_spice_kernels = [
+    (rootDir + '/spice/JUICE/kernels/lsk/naif0012.tls'),
+    (rootDir + '/spice/JUICE/kernels/sclk/juice_step_240828_v01.tsc')]
+spice.furnsh(ls_spice_kernels)
+
+
+
 #       Load and manage LP data
 # ================================================
 # ================================================
@@ -73,8 +80,6 @@ if create_LP:
     # Max and min TM values --> saturation
     saturation_max_TM = 1048575
     saturation_min_TM = -1048576
-    # saturation_max_TM = 1048500
-    # saturation_min_TM = -1048500
 
 
     file_i = 0
@@ -127,7 +132,7 @@ if create_LP:
         # ================================================
         if True:
             list_of_start_files = [
-                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240126T090524_V03",
+                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240126T090524_V03.cdf",
                 "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240706T023204_V01.cdf",
                 "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240819T202634_V01.cdf",
                 "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240820T180737_V01.cdf",
@@ -167,13 +172,13 @@ if create_LP:
         if True: 
             # This file contains lunar wake data
             if filename == "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240819T202634_V01.cdf":
-                i = 0
-                for t in Epoch_LP:
-                    if t > 7.77371896287*1e17:   
-                        if t < 7.77373767102*1e17:
-                            Mask[:,i] = 3
-                    i+=1
-
+                # Lunar oculatation between T20:30:00 and T21:09:33 (T21:05:00 + 00:04:33)
+                lunar_wake_begin = spice.unitim(spice.utc2et("2024-08-19T20:30"), "ET", "TT")*1e9
+                lunar_wake_end = spice.unitim(spice.utc2et("2024-08-19T21:09:33"), "ET", "TT")*1e9
+                
+                lunar_wake = (Epoch_LP > lunar_wake_begin) & (Epoch_LP < lunar_wake_end)
+                Mask[:,lunar_wake] = 3
+                
 
 
         # Data that has not been filtered out gets the 
