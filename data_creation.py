@@ -17,7 +17,7 @@ import pycdfpp, os, re, numpy as np
 # ================================================ 
 rootDir = "C:/Users/1/Onedrive - KTH/MEX/IRF" # My desktop
 rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
-rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
+# rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
 
 
 
@@ -137,7 +137,8 @@ if create_LP:
                 "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240819T202634_V01.cdf",
                 "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240820T180737_V01.cdf",
                 "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240823T035821_V01.cdf",
-                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240126T090524_V03.cdf"]
+                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240126T090524_V03.cdf",
+                "JUICE_L1a_RPWI-LP-SID1_RICH_DE763_SNAP_20240909T093240_V01.cdf"]
             
             for filename_2 in list_of_start_files:    
                 if filename == filename_2:

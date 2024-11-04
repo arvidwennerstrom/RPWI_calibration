@@ -1,4 +1,35 @@
-import datetime, spiceypy as spice, matplotlib.pyplot as plt
+import datetime, spiceypy as spice, matplotlib.pyplot as plt, numpy as np
+from matplotlib.ticker import FuncFormatter, MaxNLocator
+
+
+# Does not do anything rn, might be useful in the future
+class Data_struct:
+    def __init__(self,data,time,mask,unit,legends,title,explain = None):
+        self.data = data
+        self.time = time
+        self.mask = mask
+        self.unit = unit
+        self.legends = legends
+        self.title = title
+        self.explain = explain
+
+    def plot(self, axis, chunk, plot_style = ['lines'], mask_limit = 4):
+        [axis.plot(self.time[chunk][self.mask[i,chunk] >= mask_limit],self.data[i,chunk][self.mask[i,chunk] >= mask_limit], **plot_style, label=self.legends[i]) for i in range(len(self.data))]
+        axis.set_xlabel('Timestamp (UTC)')
+        axis.set_ylabel(self.unit)
+        axis.set_title(self.title)
+        axis.legend(loc='upper right')
+        axis.grid(True)
+              
+        # Ensures there are more labeled points on the time axis 
+        # and converts them to human-readable timestamps. 
+        # Also rotates them for readablility
+        axis.xaxis.set_major_locator(MaxNLocator(nbins=10))
+        axis.xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+        plt.gcf().autofmt_xdate()
+
+        return axis
+
 
 
 def datenum_to_tt2000(datenum):
