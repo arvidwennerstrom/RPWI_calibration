@@ -17,7 +17,7 @@ import pycdfpp, os, re, numpy as np
 # ================================================ 
 rootDir = "C:/Users/1/Onedrive - KTH/MEX/IRF" # My desktop
 rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
-# rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
+rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
 
 
 
@@ -230,7 +230,7 @@ if create_LP:
 
     #           Save the data in a .npz file
     # ================================================
-    np.savez((rootDir + "/data_created/LP-SID1_" + date), Epoch=Epoch_LP_All, LP_data=LP_data_All, Mask = Mask_All)
+    np.savez((rootDir + "/data_created/LP-SID1_20" + date), Epoch=Epoch_LP_All, LP_data=LP_data_All, Mask = Mask_All)
 
 
 
