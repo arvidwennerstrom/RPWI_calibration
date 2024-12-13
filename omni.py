@@ -11,18 +11,18 @@ def load_omni_data(rootDir,Epoch):
     explanation = open(rootDir + '/OMNI2/omni2_explanation.txt',"r").read()
     data =  open(rootDir + '/OMNI2/omni2_data.txt',"r").read().split('\n')[:-1]
 
-    t_orig = []; B_orig = []; SW_orig = []
+    t = []; B_GSM = []; SW_abs = []
     for idx,line in enumerate(data):
         clean_line = [val for val in line.split(' ') if val != '']
-        t_orig.append(year_doy_to_tt2000(int(clean_line[0]), int(clean_line[1]), int(clean_line[2])))
-        B_orig.append(clean_line[3:6])
-        SW_orig.append(float(clean_line[6]))
+        t.append(year_doy_to_tt2000(int(clean_line[0]), int(clean_line[1]), int(clean_line[2])))
+        B_GSM.append(clean_line[3:6])
+        SW_abs.append(float(clean_line[6]))
 
 
     # Convert data to np.arrays, for easier handling
-    t_orig = np.array(t_orig)
-    B_orig = np.array(B_orig).astype(float).T
-    SW_orig = np.array(SW_orig)
+    t = np.array(t)
+    B_GSM = np.array(B_GSM).astype(float).T
+    SW_abs = np.array(SW_abs)
     
 
 
@@ -62,38 +62,45 @@ def load_omni_data(rootDir,Epoch):
 
     # Only include data within specified time period
     # ======================================================================== 
-    included_data = (t_orig > Epoch[0]) & (t_orig < Epoch[-1])
-    t_included = t_orig[included_data]
-    B_included = B_orig[:,included_data]
-    SW_included = SW_orig[included_data]
-
+    included_data = (t > Epoch[0]) & (t < Epoch[-1])
+    t = t[included_data]
+    B_GSM = B_GSM[:,included_data]
+    SW_abs = SW_abs[included_data]
 
     
-    # Extrapolate data to fit the higher resoultion measured data
-    # ========================================================================  
-    B_high_res = np.zeros((3,len(Epoch)))
-    SW_high_res = np.zeros((1,len(Epoch)))
+
+    
+    # # Extrapolate data to fit the higher resoultion measured data
+    # # ========================================================================  
+    # B_high_res = np.zeros((3,len(Epoch)))
+    # SW_high_res = np.zeros((1,len(Epoch)))
 
 
-    for idx,b in enumerate(B_included):
-        B_high_res[idx] = np.interp(Epoch,t_included,B_included[idx])
+    # for idx,b in enumerate(B_GSM):
+    #     B_high_res[idx] = np.interp(Epoch,t,B_GSM[idx])
 
-    SW_high_res[0,:] = np.interp(Epoch,t_included,SW_included)
+    # SW_high_res[0,:] = np.interp(Epoch,t,SW_abs)
 
 
 
     # Remove data where value saturates
     # ========================================================================  
-    B_high_res[B_high_res == 999.9] = np.nan
-    SW_high_res[SW_high_res == 9999] = np.nan
+    B_GSM[B_GSM == 999.9] = np.nan
+    SW_abs[SW_abs == 9999] = np.nan
 
+
+
+    # Create 3D SW-data. SW_abs is just magnitude, from Sun to Earth, along -x axis in GSE
+    # ========================================================================  
+    SW_GSM = np.zeros_like(B_GSM)
+    SW_GSM[0] = -SW_abs
 
 
 
     # Create Struct-type objects and return 
     # ========================================================================  
-    B = Struct(B_high_res,Epoch,None,'nT',['X_GSE','Y_GSE','Z_GSE'],'ACE magnetic field in GSE')
-    SW = Struct(SW_high_res,Epoch,None,'km/s',['Sw_GSEx', 'V_sw_y', 'V_sw_z'],'SW plasma speed in GSE')
+    B = Struct(B_GSM,t,None,'nT',['X_GSE','Y_GSE','Z_GSE'],'ACE magnetic field in GSE')
+    SW = Struct(SW_GSM,t,None,'km/s',['Sw_GSEx', 'V_sw_y', 'V_sw_z'],'SW plasma speed in GSE')
     return B, SW
 
 

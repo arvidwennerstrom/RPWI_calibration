@@ -217,7 +217,6 @@ from omni import load_omni_data
 B_OMNI_GSE, SW_OMNI =  load_omni_data(rootDir,Epoch)
 
 
-
 # Load J-MAG data (B-field)
 # ========================================================================
 if roll23:
@@ -225,16 +224,25 @@ if roll23:
     B_JMAG_SC = load_jmag_data(rootDir,Epoch) 
 
 
-    # Only take x,y,z-components (not magnitude)
-    B = B_JMAG_SC.data[0:3,:]
-    v = np.zeros_like(B); v[0] = SW_OMNI.data[0]
+    # Choose the higher resolution data
+    if len(B_JMAG_SC[0]) > len(SW_OMNI[0]):
+        Epoch_jmag = B_JMAG_SC.time
+    else:
+        Epoch_jmag = SW_OMNI.time
 
 
+    # Create arrays for B and v that are of equal length
+    B_jmag = np.zeros((3,len(Epoch_jmag))); v_jmag = np.zeros((3,len(Epoch_jmag)))
+    for axis in range(3):
+        B_jmag[axis] = np.interp(Epoch_jmag,B_JMAG_SC.time,B_JMAG_SC[axis])
+        v_jmag[axis] = np.interp(Epoch_jmag,SW_OMNI.time,SW_OMNI[axis])
+    
+   
     # Calcukate E = -v x B (in mV/m)
-    E_JMAG_SC = np.zeros_like(B_JMAG_SC.data)
-    E_JMAG_SC[0:3,:] = np.cross(-v.T,B.T).T*1e-3
+    E_JMAG_SC = np.zeros((4,len(Epoch_jmag)))
+    E_JMAG_SC[0:3,:] = np.cross(-v_jmag.T,B_jmag.T).T*1e-3
     E_JMAG_SC[3,:] = np.linalg.norm(E_JMAG_SC, axis=0)
-    E_JMAG_SC = Struct(E_JMAG_SC,Epoch,None,'mV/M',['Ex','Ey','Ez','|E|'],'E-field from J-MAG in SC coords')
+    E_JMAG_SC = Struct(E_JMAG_SC,Epoch_jmag,None,'mV/M',['Ex','Ey','Ez','|E|'],'E-field from J-MAG in SC coords')
 
 
 
@@ -276,26 +284,28 @@ for i in range(3,0,-1):
 E_LP_off_SC = Struct(np.matmul(rpwi_data.M_U2E,LP_diffs_off[0:3].data)*1e3,Epoch,Mask,'mV/m',['E_off_x', 'E_off_y', 'E_off_z'],'DC offset E-field in SC coords.')
 
 
+
+
 """     Calculate E-field calibration 
 ========================================================================
 ========================================================================
 """
-cross_coefficients_E = False
+# cross_coefficients_E = False
 
 
-# NOTE: Can improve this, for example by looking at time period
-if plasmasphere:
-    # For plasmasphere period, where B comes from IGRF and v from juice velocity w.r.t the Earth.
-    # ================================================
-    E_cal_SC, cal_coeff_a, cal_coeff_b, cal_coeff_c, coeff_Epoc = fit_to_E_obs(Epoch,E_LP_SC.data,E_IGRF_SC.data,LP_potentials[3],cross_coefficients_E)
-    E_cal_SC = Struct(E_cal_SC,Epoch,None,'mV/m',['x - cal.','y - cal.','z - cal.'],'Calibrated E-field, from IGRF')
+# # NOTE: Can improve this, for example by looking at time period
+# if plasmasphere:
+#     # For plasmasphere period, where B comes from IGRF and v from juice velocity w.r.t the Earth.
+#     # ================================================
+#     E_cal_SC, cal_coeff_a, cal_coeff_b, cal_coeff_c, coeff_Epoc = fit_to_E_obs(Epoch,E_LP_SC.data,E_IGRF_SC.data,LP_potentials[3],cross_coefficients_E)
+#     E_cal_SC = Struct(E_cal_SC,Epoch,None,'mV/m',['x - cal.','y - cal.','z - cal.'],'Calibrated E-field, from IGRF')
 
 
-if roll23:
-    # For solar wind period, where B comes from J-MAG and v = v_sw comes from ACE (OMNI2). 
-    # ================================================
-    E_cal_SC, cal_coeff_a, cal_coeff_b, cal_coeff_c, coeff_Epoc = fit_to_E_obs(Epoch,E_LP_SC.data,E_JMAG_SC.data,LP_potentials[3],cross_coefficients_E)
-    E_cal_SC = Struct(E_cal_SC,Epoch,None,'mV/m',['x - cal.','y - cal.','z - cal.'],'Calibrated E-field, from J-MAG')
+# if roll23:
+#     # For solar wind period, where B comes from J-MAG and v = v_sw comes from ACE (OMNI2). 
+#     # ================================================
+#     E_cal_SC, cal_coeff_a, cal_coeff_b, cal_coeff_c, coeff_Epoc = fit_to_E_obs(Epoch,E_LP_SC.data,E_JMAG_SC.data,LP_potentials[3],cross_coefficients_E)
+#     E_cal_SC = Struct(E_cal_SC,Epoch,None,'mV/m',['x - cal.','y - cal.','z - cal.'],'Calibrated E-field, from J-MAG')
 
 
 
@@ -401,11 +411,7 @@ for chunk_i in range(number_of_data_chunks):
             fig, axes = plt.subplots(2,1,sharex=True)
             B_JMAG_SC.plot(axes[0])
             LP_potentials.plot(axes[1],range(3,4))
-
-
-            plt.figure()
-            B_JMAG_SC.plot(plt.gca())
-
+            
 
     # E-field, J-MAG & LP
     # ========================================================================  
@@ -422,9 +428,9 @@ for chunk_i in range(number_of_data_chunks):
     if True:
         if roll23:
             fig, axes = plt.subplots(2,1,sharex=True, sharey=True)
-            E_JMAG_SC.plot(axes[0],range(1,3),None,0)
+            E_JMAG_SC.plot(axes[0],range(1,3))
             # axes[1].get_shared_y_axes().joined(axes[0], axes[1])
-            E_LP_off_SC.plot(axes[1],range(1,3),None,0)
+            E_LP_off_SC.plot(axes[1],range(1,3))
             # LP_potentials.plot(axes[2],range(3,4))
    
 

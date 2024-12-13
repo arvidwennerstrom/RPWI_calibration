@@ -57,14 +57,6 @@ def load_jmag_data(rootDir,Epoch):
     B[0:3,:] = np.matmul(R,B[0:3,:])
 
 
-    import matplotlib.pyplot as plt
-    
-    plt.figure()
-    # plt.plot(t,B[0])
-    plt.plot(t,B[1])
-    plt.plot(t,B[2])
-
-
 
     # Only include data within specified time period
     # ========================================================================  
@@ -73,15 +65,15 @@ def load_jmag_data(rootDir,Epoch):
     B = B[:,included_data]
 
 
-    # Extrapolate data to fit the higher resoultion measured data
-    # ========================================================================  
-    B_high_res = np.zeros((4,len(Epoch)))
+    # # Extrapolate data to fit the higher resoultion measured data
+    # # ========================================================================  
+    # B_high_res = np.zeros((4,len(Epoch)))
 
 
-    if len(t) != 0:        
-        # Loop over x,y,z and extrapolate to match the size of Epoch
-        for idx,b in enumerate(B):
-            B_high_res[idx] = np.interp(Epoch,t,B[idx])
+    # if len(t) != 0:        
+    #     # Loop over x,y,z and extrapolate to match the size of Epoch
+    #     for idx,b in enumerate(B):
+    #         B_high_res[idx] = np.interp(Epoch,t,B[idx])
 
 
     # Create a Struct-type object and return 
