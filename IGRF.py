@@ -1,10 +1,9 @@
-import scipy, numpy as np, spiceypy as spice
-from geopack import geopack
-from E_calibr_support import Struct, datenum_to_tt2000, rotation_matrix, tt2000_to_unix
-from load_Ephemeris import load_Ephemeris
-
 
 def IGRF_B_field(rootDir,Epoch):
+    import numpy as np
+    from geopack import geopack
+    from E_calibr_support import Struct, rotation_matrix, tt2000_to_unix
+    from load_Ephemeris import load_Ephemeris
     # IGRF B-field using geopack
     # Documentation on geopack: (https://github.com/tsssss/geopack/?tab=readme-ov-file)
 
@@ -31,10 +30,7 @@ def IGRF_B_field(rootDir,Epoch):
         # Example: B_GSM is magnetic field data, from IGRF model, in GSM coordinates
         B_GSM = np.zeros((len(Epoch_ephm),3))
         v_GSM = v_ephem_GSM.T
-        # B_SC = np.zeros((3,len(Epoch_ephm)))
-        # E_GSM = np.zeros((3,len(Epoch_ephm)))
-        # E_SC = np.zeros((3,len(Epoch_ephm)))
-        # v_SC = np.zeros((3,len(Epoch_ephm)))
+
 
         # Make calculations separately for every step of ephemeris data
         for i in range(len(Epoch_ephm)):
@@ -56,9 +52,10 @@ def IGRF_B_field(rootDir,Epoch):
             # ================================================
             # Unit vectors for direction of Earth in Juice coordinates and direction
             # of Juice in GSM coordinates. These are pointing along the same axis,
-            # but in opposite directions, which is why -pos_ephem_GSM is needed.  
+            # but in opposite directions, which is why -pos_ephem_GSM is needed. 
+            # NOTE: Am I just confused, or is this wrong? So "pos_ephem_GS" and not "-pos_ephem_GSM"?
             u_SC = EARTH_SC[:,i]/np.linalg.norm(EARTH_SC[:,i])
-            u_GSM = -pos_ephem_GSM[:,i]/np.linalg.norm(pos_ephem_GSM[:,i])
+            u_GSM = pos_ephem_GSM[:,i]/np.linalg.norm(pos_ephem_GSM[:,i])
             
             # Rotation matrix from GSM to SC coords.
             R = rotation_matrix(u_GSM,u_SC)
@@ -85,6 +82,7 @@ def IGRF_B_field(rootDir,Epoch):
         E_GSM_long = np.zeros((len(Epoch),4))
         E_SC_long = np.zeros((len(Epoch),4))
         v_SC_long = np.zeros((len(Epoch),4))
+
 
         for i in range(3):
             B_GSM_long[:,i] = np.interp(Epoch,Epoch_ephm,B_GSM[:,i])

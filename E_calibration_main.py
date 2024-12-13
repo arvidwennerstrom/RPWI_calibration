@@ -68,20 +68,33 @@ from fit_to_E_obs import fit_to_E_obs
 # "data_created" and "spice" exist
 # ========================================================================
 rootDir = "C:/Users/1/Onedrive - KTH/MEX/IRF" # My desktop
-# rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
-rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
+rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
+# rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
 
 
 # Input date and time (optional) of the data to plot.
 # ========================================================================
 # Specify on format: "YYYY-MM-DDTHH:MM:SS.ns*". 
 # Date is mandatory, adding T is optional: "2024-08-20" and 2024-08-20T10" are both valid. 
-# Time precision is optional: "*T08" and "*T08.30:20.500" are both valid. 
+# Time precision is optional: "*T08" and "*T08.30:20.500" are both valid.
+ 
 time_period = ['2024-08-23T04', '2024-08-23T05:30']
+# time_period = ['2024-08-20T20', '2024-08-20T23:50']
 
+
+# Used to select what data to load. Since LP data created by "LP_data_creation.py" is stored
+# in one file per date, this is the way to tell how many files to load
 start_date = datetime.datetime.strptime(time_period[0].split('T')[0], "%Y-%m-%d")
 end_date = datetime.datetime.strptime(time_period[1].split('T')[0], "%Y-%m-%d")
 date_list = [(start_date + datetime.timedelta(days=x)).strftime("%Y%m%d") for x in range((end_date - start_date).days + 1)]
+
+
+plasmasphere = False; roll23 = False
+if '20240820' in date_list or '20240821' in date_list:
+    plasmasphere = True
+if '20240823' in date_list:
+    roll23 = True
+
 
 
 plot_styles = {
@@ -161,18 +174,18 @@ Mask = Mask[:,included_data_LP]
 # Save TM data 
 # Convert raw data to voltages, from TM units
 # ========================================================================
-LP_diffs_TM = Struct(LP_data,Epoch,Mask,'TM',['P12', 'P23', 'P34','P4 (Single ended)'],'Probe differentials')
-LP_diffs = Struct(coeffs_TM2voltage*LP_diffs_TM.data,Epoch,Mask,'V',['P12', 'P23', 'P34','P04 (Single ended)'],'Probe differentials SID1')
-LP_diffs.data[3] = -LP_diffs[3]
+LP_diffs_TM = Struct(LP_data,Epoch,Mask,'TM',['P12', 'P23', 'P34','P40 (Single ended)'],'Probe differentials')
+LP_diffs = Struct(coeffs_TM2voltage*LP_diffs_TM.data,Epoch,Mask,'V',['P12', 'P23', 'P34','P40 (Single ended)'],'Probe differentials')
+
 
 
 # Get SC potential at each probe, by adding differentials.
 # ================================================
-LP_potentials = Struct(np.zeros((4,len(Epoch))),Epoch,Mask,'V',['P01 (P12+P23+P34+P04)', 'P02 (P23+P34+P04)', 'P03 (P34+P04)', 'P04'],'Probe potentials')
-LP_potentials.data[3] = LP_diffs[3]
-LP_potentials.data[2] = LP_potentials.data[3] + LP_diffs.data[2]
-LP_potentials.data[1] = LP_potentials.data[2] + LP_diffs.data[1]
-LP_potentials.data[0] = LP_potentials.data[1] + LP_diffs.data[0]
+LP_potentials = Struct(np.zeros((4,len(Epoch))),Epoch,Mask,'V',['U1 (P12+P23+P34+P40)', 'U2 (P23+P34+P40)', 'U3 (P34+P40)', 'U4 (P40)'],'Probe potentials w.r.t SC')
+
+LP_potentials.data[3] = LP_diffs.data[3]
+for i in range(3,0,-1):
+    LP_potentials.data[i-1] = LP_potentials.data[i] + LP_diffs.data[i-1]
 
 
 
@@ -180,19 +193,17 @@ LP_potentials.data[0] = LP_potentials.data[1] + LP_diffs.data[0]
 ======================================================================== 
 ========================================================================
 """
-
 # Get E-field between probes
 # ================================================ 
 # 1e3's are used to give EF in mV/m, rather than V/m
-E_LP_LPs = Struct(np.zeros((3,len(Epoch))),Epoch,Mask,'mV/m',['P12', 'P23', 'P34'],'E-field in LP differentials')
+E_LP_LPs = Struct(np.zeros((3,len(Epoch))),Epoch,Mask[:3],'mV/m',['E12', 'E23', 'E34'],'E-field in LP differentials')
 for i in range(3):
     E_LP_LPs.data[i] = 1e3*LP_diffs[i]/np.linalg.norm(rpwi_data.M_E2U[i]) 
     
 
 # Calculate E-field in SC x-,y- and z-axes
 # ================================================
-E_LP_SC = Struct(1e3*np.matmul(rpwi_data.M_U2E,LP_diffs.data[:3]),Epoch,Mask,'mV/m',['Ex','Ey','Ez'],"E-field from LP's in SC coords")
-
+E_LP_SC = Struct(1e3*np.matmul(rpwi_data.M_U2E,LP_diffs.data[:3]),Epoch,Mask[:3],'mV/m',['Ex','Ey','Ez'],"E-field from LP's in SC coords")
 
 
 
@@ -209,32 +220,60 @@ B_OMNI_GSE, SW_OMNI =  load_omni_data(rootDir,Epoch)
 
 # Load J-MAG data (B-field)
 # ========================================================================
-from jmag import load_jmag_data
-B_JMAG_SC = load_jmag_data(rootDir,Epoch) 
+if roll23:
+    from jmag import load_jmag_data
+    B_JMAG_SC = load_jmag_data(rootDir,Epoch) 
+
+
+    # Only take x,y,z-components (not magnitude)
+    B = B_JMAG_SC.data[0:3,:]
+    v = np.zeros_like(B); v[0] = SW_OMNI.data[0]
+
+
+    # Calcukate E = -v x B (in mV/m)
+    E_JMAG_SC = np.zeros_like(B_JMAG_SC.data)
+    E_JMAG_SC[0:3,:] = np.cross(-v.T,B.T).T*1e-3
+    E_JMAG_SC[3,:] = np.linalg.norm(E_JMAG_SC, axis=0)
+    E_JMAG_SC = Struct(E_JMAG_SC,Epoch,None,'mV/M',['Ex','Ey','Ez','|E|'],'E-field from J-MAG in SC coords')
 
 
 
 # Load IGRF data (B-field, E-field etc.) 
 # ========================================================================
-B_IGRF_GSM, B_IGRF_SC, E_IGRF_GSM, E_IGRF_SC, juice_V_SC = IGRF_B_field(rootDir,Epoch)
+if plasmasphere:
+    B_IGRF_GSM, B_IGRF_SC, E_IGRF_GSM, E_IGRF_SC, juice_V_SC = IGRF_B_field(rootDir,Epoch)
 
 
 
-# Calculate -v x B 
-# ========================================================================
 
-# Only take x,y,z-components (not magnitude)
-B = B_JMAG_SC.data[0:3,:]
-v = np.zeros_like(B); v[0] = SW_OMNI.data[0]
-
-
-# Get E-field (in mV/m)
-E_JMAG_SC = np.zeros_like(B_JMAG_SC.data)
-E_JMAG_SC[0:3,:] = np.cross(-v.T,B.T).T*1e-3
-E_JMAG_SC[3,:] = np.linalg.norm(E_JMAG_SC, axis=0)
-E_JMAG_SC = Struct(E_JMAG_SC,Epoch,None,'mV/M',['Ex','Ey','Ez','|E|'],'E-field from J-MAG in SC coords')
+"""     APPLY CALIBRATION/DC OFFSET
+========================================================================
+========================================================================
+"""
+# Create a DC offset
+# ================================================
+DC_offset = Struct(np.zeros((4,len(Epoch))),Epoch,Mask,'V',['Offset 1','Offset 2','Offset 3','Offset 4'],'DC offsets')
+for idx in range(len(DC_offset.data)):
+    DC_offset.data[idx] += np.mean(LP_potentials[3] - LP_potentials[idx])
 
 
+# Apply DC offsets to get calibrated potentials
+# ================================================
+LP_potentials_off = Struct((LP_potentials.data + DC_offset.data),Epoch,Mask,'V',['U1 + dU1', 'U2 + dU2', 'U3 + dU3', 'U4'],'DC offset probe potentials')
+
+
+# Calculate new differentials using calibrated potentials
+# ================================================
+LP_diffs_off = Struct(np.zeros((4,len(Epoch))),Epoch,Mask,'V',['P12','P23','P34','P4 (Single ended)'],'DC offset probe differentials')
+LP_diffs_off.data[3] = LP_diffs[3]
+for i in range(3,0,-1):
+    LP_diffs_off.data[i-1] = LP_potentials_off.data[i-1] - LP_potentials_off.data[i]
+
+
+
+# Calculate new E-field using offset differentials
+# ================================================
+E_LP_off_SC = Struct(np.matmul(rpwi_data.M_U2E,LP_diffs_off[0:3].data)*1e3,Epoch,Mask,'mV/m',['E_off_x', 'E_off_y', 'E_off_z'],'DC offset E-field in SC coords.')
 
 
 """     Calculate E-field calibration 
@@ -245,62 +284,18 @@ cross_coefficients_E = False
 
 
 # NOTE: Can improve this, for example by looking at time period
-if False:
+if plasmasphere:
     # For plasmasphere period, where B comes from IGRF and v from juice velocity w.r.t the Earth.
     # ================================================
     E_cal_SC, cal_coeff_a, cal_coeff_b, cal_coeff_c, coeff_Epoc = fit_to_E_obs(Epoch,E_LP_SC.data,E_IGRF_SC.data,LP_potentials[3],cross_coefficients_E)
     E_cal_SC = Struct(E_cal_SC,Epoch,None,'mV/m',['x - cal.','y - cal.','z - cal.'],'Calibrated E-field, from IGRF')
 
 
-if True:
+if roll23:
     # For solar wind period, where B comes from J-MAG and v = v_sw comes from ACE (OMNI2). 
     # ================================================
     E_cal_SC, cal_coeff_a, cal_coeff_b, cal_coeff_c, coeff_Epoc = fit_to_E_obs(Epoch,E_LP_SC.data,E_JMAG_SC.data,LP_potentials[3],cross_coefficients_E)
     E_cal_SC = Struct(E_cal_SC,Epoch,None,'mV/m',['x - cal.','y - cal.','z - cal.'],'Calibrated E-field, from J-MAG')
-
-
-
-# NOTE: This could use some work. Right now it does nothing and since it's made for a constant
-# DC offset, which we might not have use of anymore, it may be unneccesary. 
-"""     APPLY CALIBRATION/DC OFFSET
-========================================================================
-========================================================================
-"""
-"""
-# Calculate calibrated differentials from E-field
-# ================================================
-LP_diffs_cal = np.matmul(rpwi_data.M_E2U,E_cal_SC.data)*1e-3
-LP_diffs_cal = Struct(LP_diffs_cal,Epoch,Mask,'V',['P12','P23','P34'],'Calibrated LP differentials')
-
-
-DC_offset = Struct(np.zeros((3,len(Epoch))),Epoch,Mask,'V',['Offset 1','Offset 2','Offset 3','Offset 4'],'DC offsets')
-
-
-# Apply DC offsets to get calibrated potentials
-# ================================================
-LP_potentials_offset = Struct(np.zeros((4,len(Epoch))),Epoch,Mask,'V',['U1 + dU1', 'U2 + dU2', 'U3 + dU3', 'U4'],'Offset probe potentials')
-LP_potentials_offset.data[3] = LP_potentials[3]
-LP_potentials_offset.data[2] = LP_potentials[2] + DC_offset[2]
-LP_potentials_offset.data[1] = LP_potentials[1] + DC_offset[1]
-LP_potentials_offset.data[0] = LP_potentials[0] + DC_offset[0]
-
-
-# Calculate new differentials using calibrated potentials
-# ================================================
-LP_diffs_offset = Struct(np.zeros((4,len(Epoch))),Epoch,Mask,'V',['P12','P23','P34','P4 (Single ended)'],'Offset probe differnetials')
-LP_diffs_offset.data[3] = LP_diffs[3]
-LP_diffs_offset.data[2] = LP_potentials_offset.data[2] - LP_potentials_offset.data[3]
-LP_diffs_offset.data[1] = LP_potentials_offset.data[1] - LP_potentials_offset.data[2]
-LP_diffs_offset.data[0] = LP_potentials_offset.data[0] - LP_potentials_offset.data[1]
-
-
-# Calculate new E-field using offset differentials
-# ================================================
-E_LP_LPs_offset = Struct(np.zeros((3,len(Epoch))),Epoch,Mask,'mV/m',['P12', 'P23', 'P34'],'Offset E-field in LP differentials')
-E_LP_LPs_offset.data[0] = 1e3*LP_diffs_offset.data[0]/np.linalg.norm(rpwi_data.LP12_distance)
-E_LP_LPs_offset.data[1] = 1e3*LP_diffs_offset.data[1]/np.linalg.norm(rpwi_data.LP23_distance)
-E_LP_LPs_offset.data[2] = 1e3*LP_diffs_offset.data[2]/np.linalg.norm(rpwi_data.LP34_distance)
-"""
 
 
 
@@ -348,7 +343,7 @@ for chunk_i in range(number_of_data_chunks):
     if False:
         fig, axes = plt.subplots(2,1,sharex=True)
         LP_potentials.plot(axes[0],None,chunk,4,plot_styles['lines'])
-        LP_potentials_offset.plot(axes[1],None,chunk,4,plot_styles['lines'])
+        LP_potentials_off.plot(axes[1],None,chunk,4,plot_styles['lines'])
         fig.canvas.manager.set_window_title("LP potentials " + window_title)
 
 
@@ -357,7 +352,7 @@ for chunk_i in range(number_of_data_chunks):
     if False:
         fig, axes = plt.subplots(3,1,sharex=True)
         LP_diffs.plot(axes[0],range(3),chunk,4,plot_styles['lines'])
-        LP_diffs_offset.plot(axes[1],range(3),chunk,4,plot_styles['lines'])
+        LP_diffs_off.plot(axes[1],range(3),chunk,4,plot_styles['lines'])
         LP_diffs.plot(axes[2],range(3,4),chunk,4,plot_styles['lines'])
         fig.canvas.manager.set_window_title("LP differentials " + window_title)
 
@@ -367,7 +362,7 @@ for chunk_i in range(number_of_data_chunks):
     if False:
         fig, axes = plt.subplots(3,1,sharex=True)
         E_LP_LPs.plot(axes[0],None,chunk,4,plot_styles['lines'])
-        E_LP_LPs_offset.plot(axes[1],None,chunk,4,plot_styles['lines'])
+        E_LP_LPs_off.plot(axes[1],None,chunk,4,plot_styles['lines'])
         LP_diffs.plot(axes[2],range(3,4),chunk,4,plot_styles['lines'])
         fig.canvas.manager.set_window_title("EFs " + window_title)
 
@@ -382,23 +377,6 @@ for chunk_i in range(number_of_data_chunks):
         fig.canvas.manager.set_window_title("EFs in XYZ " + window_title)
     
 
-    # IGRF model GSM
-    # ========================================================================   
-    if False:
-        fig, axes = plt.subplots(2,1,sharex=True)
-        B_IGRF_GSM.plot(axes[0])
-        E_IGRF_GSM.plot(axes[1])
-
-    
-    # J-MAG B-field
-    # ========================================================================  
-    if True:
-        fig, axes = plt.subplots(2,1,sharex=True)
-        B_JMAG_SC.plot(axes[0])
-        LP_potentials.plot(axes[1],range(3,4))
-
-
-
     # OMNI2 data
     # ========================================================================  
     if False:
@@ -407,23 +385,52 @@ for chunk_i in range(number_of_data_chunks):
         SW_OMNI.plot(axes[1],range(1))
 
 
+    # IGRF model GSM
+    # ========================================================================   
+    if True:
+        if plasmasphere:
+            fig, axes = plt.subplots(2,1,sharex=True)
+            B_IGRF_GSM.plot(axes[0])
+            E_IGRF_GSM.plot(axes[1])
 
-    # J-MAG E-field
+    
+    # B-field, J-MAG 
+    # ========================================================================  
+    if True:
+        if roll23:
+            fig, axes = plt.subplots(2,1,sharex=True)
+            B_JMAG_SC.plot(axes[0])
+            LP_potentials.plot(axes[1],range(3,4))
+
+
+            plt.figure()
+            B_JMAG_SC.plot(plt.gca())
+
+
+    # E-field, J-MAG & LP
     # ========================================================================  
     if False:
-        # E_LP_SC.data[0,:] = E_LP_SC.data[0,:] + 175
-        # E_LP_SC.data[1,:] = E_LP_SC.data[1,:] + 30
-        # E_LP_SC.data[2,:] = E_LP_SC.data[2,:] + 20
-        fig, axes = plt.subplots(3,1,sharex=True)
-        E_JMAG_SC.plot(axes[0],range(1,3))
-        E_LP_SC.plot(axes[1],range(1,3))
-        LP_potentials.plot(axes[2],range(3,4))
+        if roll23:
+            fig, axes = plt.subplots(3,1,sharex=True)
+            E_JMAG_SC.plot(axes[0],range(1,3))
+            E_LP_SC.plot(axes[1],range(1,3))
+            LP_potentials.plot(axes[2],range(3,4))
 
 
+    # E-field, J-MAG & offset LP
+    # ========================================================================
+    if True:
+        if roll23:
+            fig, axes = plt.subplots(2,1,sharex=True, sharey=True)
+            E_JMAG_SC.plot(axes[0],range(1,3),None,0)
+            # axes[1].get_shared_y_axes().joined(axes[0], axes[1])
+            E_LP_off_SC.plot(axes[1],range(1,3),None,0)
+            # LP_potentials.plot(axes[2],range(3,4))
+   
 
     # Fitted E-field
     # ========================================================================  
-    if True:
+    if False:
         fig, axes = plt.subplots(3,1,sharex=True)
         E_LP_SC.plot(axes[0],range(1))
         E_cal_SC.plot(axes[0],range(1))

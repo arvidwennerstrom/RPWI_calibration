@@ -1,5 +1,4 @@
 import datetime, spiceypy as spice, matplotlib.pyplot as plt, numpy as np
-from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 
 """     Data structure
@@ -24,6 +23,8 @@ class Struct:
 
 
     def plot(self, fig_axis, data_range = None, chunk = None, mask_limit = 4, plot_style = {'linewidth':'1'}):
+        from matplotlib.ticker import FuncFormatter, MaxNLocator
+        
         time = self.time
         data = self.data
         mask = self.mask

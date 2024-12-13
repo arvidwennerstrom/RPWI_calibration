@@ -58,7 +58,7 @@ def load_omni_data(rootDir,Epoch):
     # Shift the time of the omni data
     t_shift = r_diff/v # [seconds]
     Epoch = Epoch-t_shift*1e9
-   
+
 
     # Only include data within specified time period
     # ======================================================================== 
@@ -74,15 +74,12 @@ def load_omni_data(rootDir,Epoch):
     B_high_res = np.zeros((3,len(Epoch)))
     SW_high_res = np.zeros((1,len(Epoch)))
 
-    # outside_range = (Epoch < t_included[0]) | (Epoch > t_included[-1])
-
 
     for idx,b in enumerate(B_included):
         B_high_res[idx] = np.interp(Epoch,t_included,B_included[idx])
-        # B_high_res[idx][outside_range] = np.nan
 
     SW_high_res[0,:] = np.interp(Epoch,t_included,SW_included)
-    # SW_high_res[outside_range] = np.nan
+
 
 
     # Remove data where value saturates
@@ -92,10 +89,11 @@ def load_omni_data(rootDir,Epoch):
 
 
 
+
     # Create Struct-type objects and return 
     # ========================================================================  
     B = Struct(B_high_res,Epoch,None,'nT',['X_GSE','Y_GSE','Z_GSE'],'ACE magnetic field in GSE')
-    SW = Struct(SW_high_res,Epoch,None,'km/s',['V_sw_x', 'V_sw_y', 'V_sw_z'],'SW plasma speed in GSE')
+    SW = Struct(SW_high_res,Epoch,None,'km/s',['Sw_GSEx', 'V_sw_y', 'V_sw_z'],'SW plasma speed in GSE')
     return B, SW
 
 
