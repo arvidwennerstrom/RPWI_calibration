@@ -67,21 +67,6 @@ def load_omni_data(rootDir,Epoch):
     B_GSM = B_GSM[:,included_data]
     SW_abs = SW_abs[included_data]
 
-    
-
-    
-    # # Extrapolate data to fit the higher resoultion measured data
-    # # ========================================================================  
-    # B_high_res = np.zeros((3,len(Epoch)))
-    # SW_high_res = np.zeros((1,len(Epoch)))
-
-
-    # for idx,b in enumerate(B_GSM):
-    #     B_high_res[idx] = np.interp(Epoch,t,B_GSM[idx])
-
-    # SW_high_res[0,:] = np.interp(Epoch,t,SW_abs)
-
-
 
     # Remove data where value saturates
     # ========================================================================  
@@ -97,6 +82,7 @@ def load_omni_data(rootDir,Epoch):
 
 
 
+
     # Create Struct-type objects and return 
     # ========================================================================  
     B = Struct(B_GSM,t,None,'nT',['X_GSE','Y_GSE','Z_GSE'],'ACE magnetic field in GSE')
@@ -104,3 +90,14 @@ def load_omni_data(rootDir,Epoch):
     return B, SW
 
 
+
+# # Extrapolate data to fit the higher resoultion measured data
+# # ========================================================================  
+# B_high_res = np.zeros((3,len(Epoch)))
+# SW_high_res = np.zeros((1,len(Epoch)))
+
+
+# for idx,b in enumerate(B_GSM):
+#     B_high_res[idx] = np.interp(Epoch,t,B_GSM[idx])
+
+# SW_high_res[0,:] = np.interp(Epoch,t,SW_abs)

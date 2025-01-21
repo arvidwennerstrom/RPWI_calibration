@@ -54,8 +54,9 @@ Exceptions to this are often self explanatory, such as:
 ========================================================================
 """
 import datetime, numpy as np, scipy, matplotlib.pyplot as plt
-from E_calibr_support import Struct, datenum_to_tt2000, rpwi_data, coeffs_TM2voltage  
+from E_calibr_support import Struct, rpwi_data, coeffs_TM2voltage  
 from IGRF import IGRF_B_field
+from load_Ephemeris import load_Ephemeris
 from fit_to_E_obs import fit_to_E_obs
 
 
@@ -67,9 +68,9 @@ from fit_to_E_obs import fit_to_E_obs
 # Input overall directory path, where folders "datasets", 
 # "data_created" and "spice" exist
 # ========================================================================
-rootDir = "C:/Users/1/Onedrive - KTH/MEX/IRF" # My desktop
-rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
-# rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
+# rootDir = "C:/Users/1/Onedrive - KTH/MEX/IRF" # My desktop
+# rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
+rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
 
 
 # Input date and time (optional) of the data to plot.
@@ -206,11 +207,18 @@ for i in range(3):
 E_LP_SC = Struct(1e3*np.matmul(rpwi_data.M_U2E,LP_diffs.data[:3]),Epoch,Mask[:3],'mV/m',['Ex','Ey','Ez'],"E-field from LP's in SC coords")
 
 
-
 """     Load B- and v-data
 ======================================================================== 
 ========================================================================
 """
+
+# Load Ephemeris data
+# ========================================================================
+Epoch_ephm, EARTH_SC, pos_ephem_GSM, v_ephem_GSM = load_Ephemeris(rootDir,Epoch)
+EARTH_SC = Struct(EARTH_SC,Epoch_ephm,None,'',['x_Earth','y_Earth','z_Earth'],'Earth direction in SC coordinates')
+
+
+
 # Load OMNI2 data (V_sw and B-field)
 # ========================================================================
 from omni import load_omni_data
@@ -238,7 +246,7 @@ if roll23:
         v_jmag[axis] = np.interp(Epoch_jmag,SW_OMNI.time,SW_OMNI[axis])
     
    
-    # Calcukate E = -v x B (in mV/m)
+    # Calculate E = -v x B (in mV/m)
     E_JMAG_SC = np.zeros((4,len(Epoch_jmag)))
     E_JMAG_SC[0:3,:] = np.cross(-v_jmag.T,B_jmag.T).T*1e-3
     E_JMAG_SC[3,:] = np.linalg.norm(E_JMAG_SC, axis=0)
@@ -250,6 +258,8 @@ if roll23:
 # ========================================================================
 if plasmasphere:
     B_IGRF_GSM, B_IGRF_SC, E_IGRF_GSM, E_IGRF_SC, juice_V_SC = IGRF_B_field(rootDir,Epoch)
+else:
+    B_IGRF_GSM = B_IGRF_SC = E_IGRF_GSM = E_IGRF_SC = juice_V_SC = None
 
 
 
@@ -285,15 +295,12 @@ E_LP_off_SC = Struct(np.matmul(rpwi_data.M_U2E,LP_diffs_off[0:3].data)*1e3,Epoch
 
 
 
-
 """     Calculate E-field calibration 
 ========================================================================
 ========================================================================
 """
-# cross_coefficients_E = False
+cross_coefficients_E = False
 
-
-# # NOTE: Can improve this, for example by looking at time period
 # if plasmasphere:
 #     # For plasmasphere period, where B comes from IGRF and v from juice velocity w.r.t the Earth.
 #     # ================================================
@@ -397,7 +404,7 @@ for chunk_i in range(number_of_data_chunks):
 
     # IGRF model GSM
     # ========================================================================   
-    if True:
+    if False:
         if plasmasphere:
             fig, axes = plt.subplots(2,1,sharex=True)
             B_IGRF_GSM.plot(axes[0])
@@ -406,12 +413,12 @@ for chunk_i in range(number_of_data_chunks):
     
     # B-field, J-MAG 
     # ========================================================================  
-    if True:
+    if False:
         if roll23:
             fig, axes = plt.subplots(2,1,sharex=True)
             B_JMAG_SC.plot(axes[0])
             LP_potentials.plot(axes[1],range(3,4))
-            
+
 
     # E-field, J-MAG & LP
     # ========================================================================  
@@ -425,14 +432,26 @@ for chunk_i in range(number_of_data_chunks):
 
     # E-field, J-MAG & offset LP
     # ========================================================================
-    if True:
+    if False:
         if roll23:
+            
+            # Create a lower resolution LP E-field
+            E_LP_off_SC_short = Struct(np.zeros_like(E_JMAG_SC.data),E_JMAG_SC.time,None,'mV/m',['Ex','Ey','Ez','|E|'],'Low resolution E field from LPs')
+            for i in range(len(E_LP_off_SC.data)):
+                E_LP_off_SC_short.data[i] = np.interp(E_JMAG_SC.time,E_LP_off_SC.time,E_LP_off_SC[i])
+
+            # # With Earth in SC coords.
+            # fig, axes = plt.subplots(3,1,sharex=True)
+            # E_JMAG_SC.plot(axes[0],range(1,3))
+            # E_LP_off_SC.plot(axes[1],range(1,3))
+            # EARTH_SC.plot(axes[2])
+
+            # Without Earth location
             fig, axes = plt.subplots(2,1,sharex=True, sharey=True)
             E_JMAG_SC.plot(axes[0],range(1,3))
-            # axes[1].get_shared_y_axes().joined(axes[0], axes[1])
             E_LP_off_SC.plot(axes[1],range(1,3))
-            # LP_potentials.plot(axes[2],range(3,4))
-   
+
+
 
     # Fitted E-field
     # ========================================================================  
@@ -506,5 +525,3 @@ for chunk_i in range(number_of_data_chunks):
     # This chunk's plots
     # ================================================
     plt.show()
-
-# print(np.mean(cal_coeff_a))

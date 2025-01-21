@@ -22,7 +22,7 @@ class Struct:
         return self.data[item]
 
 
-    def plot(self, fig_axis, data_range = None, chunk = None, mask_limit = 4, plot_style = {'linewidth':'1'}):
+    def plot(self, fig_axis, data_range = None, chunk = None, mask_limit = 4, xtick_in_minutes = 0, plot_style = {'linewidth':'1'}):
         from matplotlib.ticker import FuncFormatter, MaxNLocator
         
         time = self.time
@@ -40,6 +40,7 @@ class Struct:
             if mask is not None:        
                 mask = mask[:,chunk]    
 
+
         # Apply masking if it exists
         if self.mask is None:
             [fig_axis.plot(time,data[i], **plot_style, label=self.legends[i]) for i in data_range]
@@ -51,13 +52,26 @@ class Struct:
         fig_axis.set_title(self.title)
         fig_axis.legend(loc='upper right')
         fig_axis.grid(True)
-              
-        # Ensures there are more labeled points on the time axis 
-        # and converts them to human-readable timestamps. 
-        # Also rotates them for readablility
-        fig_axis.xaxis.set_major_locator(MaxNLocator(nbins=10))
-        fig_axis.xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+
+
+        # If xtick size has been specified, this will display them correctly
+        if xtick_in_minutes != 0: 
+            start = tt2000_to_readable(time[0])
+            step_size_tt2000 = xtick_in_minutes*60*1e9
+
+            xticks = np.arange(time[0], time[-1], step_size_tt2000)
+            fig_axis.set_xticks(xticks)
+            fig_axis.xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+
+        else:
+            # Ensures there are more labeled points on the time axis 
+            # and converts them to human-readable timestamps. 
+            fig_axis.xaxis.set_major_locator(MaxNLocator(nbins=10))
+            fig_axis.xaxis.set_major_formatter(FuncFormatter(dynamic_time_formatter))
+        
+        # Rotate them for readablility
         plt.gcf().autofmt_xdate()
+
 
         return fig_axis
 
@@ -112,27 +126,34 @@ def year_doy_to_tt2000(year, doy, hour):
     return int(tt2000)
 
 
+
 def tt2000_to_unix(tt2000):
     """
     Convert TT2000 time to Unix time.
     Parameters:
-        tt2000 (int): TT2000 time in nanoseconds since 2000-01-01T12:00:00.
+        tt2000 (int): TT2000 time in nanoseconds since 2000-01-01T12:00:00.000000000.
     Returns:
         float: Unix time in seconds since 1970-01-01T00:00:00.
     """
-    # TT2000 reference: 2000-01-01T12:00:00
-    # Unix reference: 1970-01-01T00:00:00
-    tt2000_epoch_to_unix_epoch = 946727935.0 # seconds between TT2000 and Unix epochs
+    # Convert TT2000 (nanoseconds) to ephemeris time (ET/TDB) in seconds   
+    ephem_time = spice.unitim(tt2000*1e-9, 'TT', 'ET')
+
+    # Seconds between TT2000 and Unix epochs (should be 946727935.0)
+    ephem_unix_diff = -spice.str2et('1970-01-01T00:00:00') 
     
-    # Convert TT2000 from nanoseconds to seconds and adjust to Unix epoch
-    unix_time = (tt2000 / 1e9) + tt2000_epoch_to_unix_epoch
+    # Adjust to Unix epoch
+    unix_time = ephem_time + ephem_unix_diff
     
     return unix_time
 
 
+
 def datenum_to_tt2000(datenum):
+    # NOTE: NOT IN USE ANYMORE
+    #  
     # MATLAB's datenum is the number of days since 0-Jan-0000
     # So, adjust by the difference between Python's datetime epoch (1970-01-01) and MATLAB's epoch
+    
     matlab_epoch = datetime.datetime(1970, 1, 1)
     days = datenum - 719529  # MATLAB's epoch is 719529 days before 1970-01-01
     dt = matlab_epoch + datetime.timedelta(days=days)
@@ -146,15 +167,15 @@ def datenum_to_tt2000(datenum):
     return tt2000_time
 
 
+
 def tt2000_to_readable(tt2000,precision = 9):    
-    # Convert TT2000 (nanoseconds) to ephemeris time (TDB) in seconds
-    ephem_time = spice.unitim(tt2000/ 1e9, 'TT', 'TDB')
+    # Convert TT2000 (nanoseconds) to ephemeris time (ET/TDB) in seconds   
+    ephem_time = spice.unitim(tt2000*1e-9, 'TT', 'ET')
 
     # Convert ephemeris time to human-readable UTC string
-    utcs = spice.spiceypy.et2utc(ephem_time , format_str='ISOC', prec=precision)
-
-    readable = utcs
+    readable = spice.et2utc(ephem_time , format_str='ISOC', prec=precision)
     return readable
+
 
 
 # Custom formatter function to convert displayed tt2000 values dynamically

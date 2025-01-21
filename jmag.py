@@ -12,8 +12,8 @@ def load_jmag_data(rootDir,Epoch):
     t = []; B = np.zeros((4,len(data)))
     for idx,line in enumerate(data):
         vals = line.split('\t')
+              
         
-
         # Read and convert time to tt2000
         tt2000 = spice.unitim(spice.str2et(vals[0]), 'ET', 'TT')*1e9
         t.append(tt2000)
@@ -38,24 +38,9 @@ def load_jmag_data(rootDir,Epoch):
     R = np.array([
         [-7.77145961*1e-1,  8.39299198*1e-17,   -6.29320391*1e-1],
         [-9.51729314*1e-17, -1.00000000*1e0,    -1.58371803*1e-17],
-        [-6.29320391*1e-1,  4.75864657*1e-17,   7.77145961*1e-1]]) 
+        [-6.29320391*1e-1,  4.75864657*1e-17,   7.77145961*1e-1]])
     
-    
-    # TEST
-    # R = np.array([
-    #     [-7.77145961*1e-1,  8.39299198*1e-17,   -6.29320391*1e-1],
-    #     [-9.51729314*1e-17, -1.00000000*1e0,    -1.58371803*1e-17],
-    #     [-6.29320391*1e-1,  4.75864657*1e-17,   7.77145961*1e-1]]) 
-
-
-    # From Michiko
-    # R = np.array([
-    #     [ 6.29320391e-1,  7.70695203e-17, -7.77145961e-01],
-    #     [ 1.22464680e-16, -1.00000000e+00, -7.49879891e-33],
-    #     [-7.77145961e-01, -9.51729314e-17, -6.29320391e-01]])
-
     B[0:3,:] = np.matmul(R,B[0:3,:])
-
 
 
     # Only include data within specified time period

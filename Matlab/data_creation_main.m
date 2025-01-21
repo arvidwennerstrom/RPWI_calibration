@@ -2,7 +2,6 @@
 % Overall location of data
 rootDir = 'C:\Users\arvwe\Onedrive - KTH\MEX\IRF'; % For my computer
 % rootDir = 'C:\Users\arvidwen\Onedrive - KTH\MEX\IRF'; % For KTH computers
-load([rootDir, '\Matlab\data\rpwi_data.mat'])
 
 
 % Dates to include, on format 'YYMMDD'
@@ -12,7 +11,7 @@ datasetDir = [rootDir '\datasets\20', date(1:2) '\', date(3:4), '\', date(5:6)];
 
 % AC and DC differential mode: 0-3 (0 is default)
 mode = 0;
-[d_a,d_b,d_c] = mode_depending_LP_distance(mode,LP_delta_d);
+% [d_a,d_b,d_c] = mode_depending_LP_distance(mode,LP_delta_d);
 
 
 data_handling_rules = struct('TM2voltage',true,'noise_filter',true,'density_mode_removal',true,'first_samples_removal',true,'voltage2Efield',true);

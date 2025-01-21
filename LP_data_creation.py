@@ -16,8 +16,8 @@ import pycdfpp, os, re, numpy as np
 # "datasets", "data_created" and "spice" exist
 # ================================================ 
 rootDir = "C:/Users/1/Onedrive - KTH/MEX/IRF" # My desktop
-# rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
-# rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
+rootDir = "C:/Users/arvwe/Onedrive - KTH/MEX/IRF" # My laptop
+rootDir = "C:/Users/arvidwen/Onedrive - KTH/MEX/IRF" # KTH computers
 
 
 
